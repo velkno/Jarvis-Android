@@ -20,6 +20,7 @@ jobs:
           unzip -q Jarvis-v1.2-build-ready-source.zip
           test -f jarvis/gradlew
           patch --batch -p1 < Jarvis-v1.4-features.patch
+          find jarvis -type f \( -name '*.orig' -o -name '*.rej' \) -delete
           cp -a jarvis/. .
           rm -rf jarvis
       - uses: actions/setup-java@v4
