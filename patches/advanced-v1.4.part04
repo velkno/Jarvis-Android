@@ -1,0 +1,127 @@
++                val el = idx?.let { lastSnapshot?.elements?.getOrNull(it) }
++                val native = el != null && acc?.currentPackage() == lastSnapshot?.packageName && acc.clickElement(el, true)
++                val ok = native || (acc?.longPress(x, y, (intArg("ms") ?: 900).toLong()) ?: false)
++                ToolOutcome.text(if (ok) "تم الضغط المطول على ($x,$y)" else "تعذّر الضغط المطول. فعّل إمكانية الوصول.")
++            }
++            "double_tap" -> {
++                val (x, y) = coords() ?: return ToolOutcome.text("حدّد index أو x,y.")
++                val ok = acc?.doubleTap(x, y) ?: false
++                ToolOutcome.text(if (ok) "تم النقر المزدوج" else "تعذّر النقر المزدوج")
++            }
++            "drag" -> {
++                val x1 = intArg("x1") ?: return ToolOutcome.text("x1 مفقود")
++                val y1 = intArg("y1") ?: return ToolOutcome.text("y1 مفقود")
++                val x2 = intArg("x2") ?: return ToolOutcome.text("x2 مفقود")
++                val y2 = intArg("y2") ?: return ToolOutcome.text("y2 مفقود")
++                val ok = acc?.drag(x1, y1, x2, y2, (intArg("ms") ?: 900).toLong()) ?: false
++                ToolOutcome.text(if (ok) "تم السحب" else "فشل السحب")
++            }
++            "pinch" -> {
++                val dm = context.resources.displayMetrics
++                val x = intArg("x") ?: dm.widthPixels / 2
++                val y = intArg("y") ?: dm.heightPixels / 2
++                val ok = acc?.pinch(x, y, strArg("direction") == "in", intArg("spread") ?: 220) ?: false
++                ToolOutcome.text(if (ok) "تم التحجيم" else "تعذّر التحجيم")
++            }
++            "tap_text" -> {
++                val text = strArg("text") ?: return ToolOutcome.text("النص مفقود")
++                val el = acc?.matchElement(text, boolArg("exact"))
++                    ?: return ToolOutcome.text("لم يُعثر على النص؛ استعمل read_screen")
++                val ok = acc.clickElement(el) || acc.tap(el.centerX, el.centerY)
++                ToolOutcome.text(if (ok) "تم النقر على ${el.text.take(80)}" else "فشل النقر")
++            }
++            "scroll_element" -> {
++                val (x, y) = coords() ?: return ToolOutcome.text("حدّد index أو x,y بعد read_screen")
++                val forward = strArg("direction") == "down"
++                val ok = acc?.scrollAt(x, y, forward) ?: false
++                ToolOutcome.text(if (ok) "تم تمرير الحاوية" else "لم تُعثر حاوية تدعم التمرير")
++            }
++            "wait_for" -> {
++                val text = strArg("text")?.takeIf { it.isNotBlank() }
++                    ?: return ToolOutcome.text("حدد النص المطلوب")
++                val timeout = (intArg("timeout_ms") ?: 5000).coerceIn(500, 10000)
++                val started = android.os.SystemClock.elapsedRealtime()
++                var element: UiElement? = null
++                while (android.os.SystemClock.elapsedRealtime() - started < timeout) {
++                    element = acc?.matchElement(text)
++                    if (element != null) break
++                    delay(350)
++                }
++                ToolOutcome.text(if (element != null) "ظهر النص '$text' عند (${element.centerX},${element.centerY})" else "انتهت المهلة دون ظهور '$text'")
++            }
++            "open_url" -> {
++                val url = strArg("url") ?: return ToolOutcome.text("الرابط مفقود")
++                val uri = runCatching { Uri.parse(url) }.getOrNull()
++                if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank())
++                    return ToolOutcome.text("يُسمح فقط بروابط http أو https الصالحة")
++                val success = runCatching {
++                    context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
++                }.isSuccess
++                ToolOutcome.text(if (success) "تم فتح الرابط" else "فشل فتح المتصفح")
++            }
++            "open_settings" -> {
++                val action = when (strArg("page")) {
++                    "wifi" -> Settings.ACTION_WIFI_SETTINGS
++                    "bluetooth" -> Settings.ACTION_BLUETOOTH_SETTINGS
++                    "display" -> Settings.ACTION_DISPLAY_SETTINGS
++                    "accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
++                    "apps" -> Settings.ACTION_APPLICATION_SETTINGS
++                    "battery" -> Settings.ACTION_BATTERY_SAVER_SETTINGS
++                    "sound" -> Settings.ACTION_SOUND_SETTINGS
++                    "notifications" -> Settings.ACTION_APP_NOTIFICATION_SETTINGS
++                    else -> return ToolOutcome.text("صفحة إعدادات غير مدعومة")
++                }
++                val intent = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++                if (strArg("page") == "notifications")
++                    intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
++                val opened = runCatching { context.startActivity(intent) }.isSuccess
++                ToolOutcome.text(if (opened) "تم فتح الإعدادات" else "تعذّر فتح الصفحة")
++            }
++            "device_status" -> {
++                val dm = context.resources.displayMetrics
++                val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
++                val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
++                val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
++                val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
++                ToolOutcome.text("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), الجهاز ${Build.MANUFACTURER} ${Build.MODEL}, الشاشة ${dm.widthPixels}x${dm.heightPixels}, البطارية $pct%, الوصول ${if (acc != null) "مفعّل" else "معطّل"}, Vision/SC ${OverlaySettings.visionEnabled(context)}")
++            }
++            "clipboard_write" -> {
++                val text = strArg("text") ?: return ToolOutcome.text("النص مفقود")
++                val manager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
++                manager.setPrimaryClip(android.content.ClipData.newPlainText("Jarvis", text))
++                ToolOutcome.text("تم نسخ النص إلى الحافظة")
++            }
++            "clipboard_paste" -> {
++                ToolOutcome.text(if (acc?.pasteFocused() == true) "تم اللصق في الحقل النشط" else "تعذر اللصق؛ ركّز على حقل كتابة أولاً")
++            }
++            "set_volume" -> {
++                val manager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
++                val channel = if (strArg("channel") == "ring") AudioManager.STREAM_RING else AudioManager.STREAM_MUSIC
++                val direction = when (strArg("direction")) {
++                    "up" -> AudioManager.ADJUST_RAISE
++                    "down" -> AudioManager.ADJUST_LOWER
++                    else -> return ToolOutcome.text("اختر up أو down")
++                }
++                manager.adjustStreamVolume(channel, direction, 0)
++                ToolOutcome.text("تم تغيير مستوى الصوت خطوة واحدة")
++            }
++            "media_key" -> {
++                val manager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
++                val code = when (strArg("key")) {
++                    "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
++                    "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
++                    "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
++                    "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
++                    else -> return ToolOutcome.text("زر وسائط غير مدعوم")
++                }
++                val now = SystemClock.uptimeMillis()
++                manager.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
++                manager.dispatchMediaKeyEvent(KeyEvent(now, now + 10, KeyEvent.ACTION_UP, code, 0))
++                ToolOutcome.text("تم إرسال زر الوسائط (قد يتجاهله التطبيق الحالي)")
++            }
+             "type_text" -> {
+                 val text = strArg("text") ?: return ToolOutcome.text("نص مفقود.")
+                 val idx = intArg("index")
+-                val ok = acc?.typeText(text, idx) ?: RootShell.inputText(text).success
++                val mode = strArg("mode") ?: "replace"
++                val ok = acc?.editText(text, idx, mode) ?: false
