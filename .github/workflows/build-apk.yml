@@ -17,6 +17,7 @@ jobs:
           set -euo pipefail
           unzip -q Jarvis-v1.2-build-ready-source.zip
           test -f jarvis/gradlew
+          patch --batch -p1 < Jarvis-v1.4-features.patch
           cp -a jarvis/. .
           rm -rf jarvis
       - uses: actions/setup-java@v4
@@ -41,6 +42,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jarvis-v1.2-APK
+          name: Jarvis-v1.4-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
