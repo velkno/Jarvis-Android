@@ -26,6 +26,7 @@ jobs:
             printf '\n' >> /tmp/advanced-v14.patch
           done
           patch --batch -p1 < /tmp/advanced-v14.patch
+          patch --batch -p1 < patches/advanced-v1.4-nullability.patch
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
