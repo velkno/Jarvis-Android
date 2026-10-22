@@ -1,0 +1,375 @@
+diff -ruN original/jarvis/README.md jarvis/README.md
+--- original/jarvis/README.md	2026-10-22 16:30:54.000000000 +0000
++++ jarvis/README.md	2026-10-22 18:23:47.008587756 +0000
+@@ -69,3 +69,12 @@
+ المشروع مهيأ للبناء على Android SDK 34 وGradle 8.9، لكن تشغيل `assembleDebug`
+ يحتاج إلى تنزيل Android Gradle Plugin والتبعيات من الإنترنت.
+ لا يُعدّ ملف المصدر المضغوط APK، ولا ينبغي إعادة تسمية ZIP إلى APK.
++
++
++## JARVIS Vision/SC v1.3
++- In **صلاحيات**, enable **Vision/SC** (off by default).
++- Android 11 (API 30) or newer: `read_screen` captures the active display/window using AccessibilityService.takeScreenshot and sends JPEG + accessibility tree to the chosen provider.
++- Screenshots are created in RAM on-demand, JPEG compressed to 2000px longest edge, never stored as local files, and removed from agent history immediately after the model request.
++- Android 8-10 use the existing accessibility text-only path; screenshot capture does not bypass secure windows.
++- Screenshot payload may include sensitive data and incurs vision API costs.
++- Supports OpenAI Chat Completions, Claude Messages and Gemini generateContent image parts.
+diff -ruN original/jarvis/app/build.gradle.kts jarvis/app/build.gradle.kts
+--- original/jarvis/app/build.gradle.kts	2026-10-22 16:30:54.000000000 +0000
++++ jarvis/app/build.gradle.kts	2026-10-22 18:23:47.007896096 +0000
+@@ -13,8 +13,8 @@
+         applicationId = "com.jarvis.agent"
+         minSdk = 26
+         targetSdk = 34
+-        versionCode = 3
+-        versionName = "1.2"
++        versionCode = 4
++        versionName = "1.3"
+     }
+ 
+     buildTypes {
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/agent/AgentLoop.kt jarvis/app/src/main/java/com/jarvis/agent/agent/AgentLoop.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/agent/AgentLoop.kt	2026-10-22 16:01:34.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/agent/AgentLoop.kt	2026-10-22 18:23:47.005205106 +0000
+@@ -34,6 +34,10 @@
+         try {
+             repeat(maxSteps) {
+                 val result = llm.chat(SYSTEM_PROMPT, history, toolSpecs)
++                // Never keep earlier screenshots in conversation history or retransmit them.
++                for (i in history.indices) {
++                    if (history[i].image != null) history[i] = history[i].copy(image = null)
++                }
+ 
+                 // نص تفكير/رد
+                 result.assistantText?.takeIf { it.isNotBlank() }?.let {
+@@ -68,7 +72,8 @@
+                         ChatMessage(
+                             Role.TOOL,
+                             outcome.result,
+-                            toolCallId = if (call.id.startsWith("gemini_")) call.name else call.id
++                            toolCallId = if (call.id.startsWith("gemini_")) call.name else call.id,
++                            image = outcome.image
+                         )
+                     )
+ 
+@@ -95,6 +100,7 @@
+ مبادئك:
+ 1. فكّر خطوة بخطوة. قبل أي تفاعل، استخدم read_screen لترى ما على الشاشة فعلاً — لا تخمّن.
+ 2. استخدم فهارس العناصر [index] من read_screen للنقر والكتابة؛ هي أدق من الإحداثيات.
++2أ. عندما تكون Vision/SC مفعّلة، read_screen يعيد صورة حقيقية للشاشة مع وصف العناصر. استعملها لفهم الأيقونات والصور والعناصر غير الموصوفة نصياً. الصورة تمثّل حالة الشاشة لحظة الالتقاط فقط، وليست بثاً مستمراً. الإحداثيات يجب أن تُطابق أبعاد الشاشة الأصلية، لا أبعاد الصورة المصغرة.
+ 3. بعد كل إجراء مهم (فتح تطبيق، تمرير، نقر ينقل لشاشة جديدة) اقرأ الشاشة من جديد للتحقق.
+ 4. لفتح تطبيق استخدم open_app بالاسم مباشرة (مثل «واتساب»)؛ إن فشل استخدم list_apps.
+ 5. run_shell يعمل فقط على الهواتف المروّتة؛ إن أخبرك أنه غير متاح فأكمل بالنقر والكتابة عبر الواجهة.
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/ai/AnthropicProvider.kt jarvis/app/src/main/java/com/jarvis/agent/ai/AnthropicProvider.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/ai/AnthropicProvider.kt	2026-10-22 12:40:02.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/ai/AnthropicProvider.kt	2026-10-22 18:23:47.005981514 +0000
+@@ -59,7 +59,21 @@
+                     blocks.add(buildJsonObject {
+                         put("type", "tool_result")
+                         put("tool_use_id", t.toolCallId ?: "")
+-                        put("content", t.content)
++                        if (t.image == null) {
++                            put("content", t.content)
++                        } else {
++                            putJsonArray("content") {
++                                add(buildJsonObject { put("type", "text"); put("text", t.content) })
++                                add(buildJsonObject {
++                                    put("type", "image")
++                                    putJsonObject("source") {
++                                        put("type", "base64")
++                                        put("media_type", "image/jpeg")
++                                        put("data", t.image.jpegBase64)
++                                    }
++                                })
++                            }
++                        }
+                     })
+                     i++
+                 }
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/ai/GeminiProvider.kt jarvis/app/src/main/java/com/jarvis/agent/ai/GeminiProvider.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/ai/GeminiProvider.kt	2026-10-22 13:45:00.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/ai/GeminiProvider.kt	2026-10-22 18:23:47.006279324 +0000
+@@ -66,6 +66,15 @@
+                             putJsonObject("response") { put("result", t.content) }
+                         }
+                     })
++                    // Inline JPEG as a sibling part of this tool response.
++                    t.image?.let { img ->
++                        parts.add(buildJsonObject {
++                            putJsonObject("inlineData") {
++                                put("mimeType", "image/jpeg")
++                                put("data", img.jpegBase64)
++                            }
++                        })
++                    }
+                     i++
+                 }
+                 out.add(buildJsonObject {
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/ai/LlmModels.kt jarvis/app/src/main/java/com/jarvis/agent/ai/LlmModels.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/ai/LlmModels.kt	2026-10-22 13:45:00.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/ai/LlmModels.kt	2026-10-22 18:23:46.999958201 +0000
+@@ -7,7 +7,16 @@
+     // عند role=TOOL: ناتج تنفيذ الأداة ومعرّفها
+     val toolCallId: String? = null,
+     // عند role=ASSISTANT: استدعاءات أدوات طلبها النموذج
+-    val toolCalls: List<ToolCall> = emptyList()
++    val toolCalls: List<ToolCall> = emptyList(),
++    /** Screen image attached only to the most recent screen observation. */
++    val image: ScreenImage? = null
++)
++
++/** A JPEG screenshot stored in memory for one multimodal model request. */
++data class ScreenImage(
++    val jpegBase64: String,
++    val width: Int,
++    val height: Int
+ )
+ 
+ enum class Role { SYSTEM, USER, ASSISTANT, TOOL }
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/ai/OpenAiProvider.kt jarvis/app/src/main/java/com/jarvis/agent/ai/OpenAiProvider.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/ai/OpenAiProvider.kt	2026-10-22 12:39:58.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/ai/OpenAiProvider.kt	2026-10-22 18:23:47.005643622 +0000
+@@ -28,7 +28,29 @@
+                 add(buildJsonObject {
+                     put("role", "system"); put("content", system)
+                 })
+-                messages.forEach { m -> add(encodeMessage(m)) }
++                messages.forEach { m ->
++                    add(encodeMessage(m))
++                    // Chat Completions tool messages accept text only. The subsequent
++                    // user message carries the image and keeps the tool_call_id valid.
++                    if (m.role == Role.TOOL && m.image != null) {
++                        add(buildJsonObject {
++                            put("role", "user")
++                            putJsonArray("content") {
++                                add(buildJsonObject {
++                                    put("type", "text")
++                                    put("text", "صورة الشاشة الحية الملتقطة بواسطة read_screen:")
++                                })
++                                add(buildJsonObject {
++                                    put("type", "image_url")
++                                    putJsonObject("image_url") {
++                                        put("url", "data:image/jpeg;base64,${m.image.jpegBase64}")
++                                        put("detail", "high")
++                                    }
++                                })
++                            }
++                        })
++                    }
++                }
+             }
+             if (tools.isNotEmpty()) {
+                 putJsonArray("tools") { tools.forEach { add(encodeTool(it)) } }
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt jarvis/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt	2026-10-22 13:45:26.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt	2026-10-22 18:23:47.004013433 +0000
+@@ -1,5 +1,6 @@
+ package com.jarvis.agent.control
+ 
++import com.jarvis.agent.ai.ScreenImage
+ import com.jarvis.agent.ai.ParamSpec
+ import com.jarvis.agent.ai.ToolSpec
+ import kotlinx.coroutines.delay
+@@ -19,7 +20,7 @@
+     fun specs(): List<ToolSpec> = listOf(
+         ToolSpec(
+             name = "read_screen",
+-            description = "اقرأ محتوى الشاشة الحالية: التطبيق المفتوح وكل العناصر المرئية (أزرار، نصوص، حقول) مع فهارسها ومواضعها. استخدمها دائماً قبل أي تفاعل لتعرف ما أمامك.",
++            description = "اقرأ الشاشة الحية: نصوص العناصر وفهارسها، وصورة شاشة فعلية (Vision/SC) إن كانت مفعّلة في الإعدادات وعلى Android 11+. اطلبها قبل كل تفاعل مهم وبعده.",
+             parameters = emptyMap()
+         ),
+         ToolSpec(
+@@ -114,7 +115,22 @@
+                 val snap = acc?.describeScreen()
+                     ?: return ToolOutcome.text("خدمة الوصول غير مفعّلة. فعّلها من الإعدادات.")
+                 lastSnapshot = snap
+-                ToolOutcome.text(snap.toPrompt())
++                if (!OverlaySettings.visionEnabled(context)) {
++                    ToolOutcome.text(snap.toPrompt() + "\nVision/SC: غير مفعّل من الإعدادات.")
++                } else if (android.os.Build.VERSION.SDK_INT < 30) {
++                    ToolOutcome.text(snap.toPrompt() + "\nVision/SC يتطلب Android 11 أو أحدث، استخدم العناصر النصية.")
++                } else {
++                    val screenshot = acc.captureScreenImage()
++                    if (screenshot == null) {
++                        ToolOutcome.text(snap.toPrompt() + "\nتعذّر تصوير الشاشة (نافذة محمية أو إذن غير متاح). استخدم العناصر النصية.")
++                    } else {
++                        ToolOutcome(
++                            snap.toPrompt() + "\nأُرفقت صورة حية للشاشة (" +
++                                "${screenshot.width}x${screenshot.height}). استخدم مواضع العناصر الأصلية للنقر.",
++                            image = screenshot
++                        )
++                    }
++                }
+             }
+ 
+             "tap" -> {
+@@ -226,7 +242,8 @@
+ /** ناتج تنفيذ أداة. */
+ data class ToolOutcome(
+     val result: String,
+-    val isFinish: Boolean = false
++    val isFinish: Boolean = false,
++    val image: ScreenImage? = null
+ ) {
+     companion object {
+         fun text(s: String) = ToolOutcome(s, false)
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/control/JarvisAccessibilityService.kt jarvis/app/src/main/java/com/jarvis/agent/control/JarvisAccessibilityService.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/control/JarvisAccessibilityService.kt	2026-10-22 16:30:54.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/control/JarvisAccessibilityService.kt	2026-10-22 18:23:47.006899930 +0000
+@@ -3,6 +3,16 @@
+ import android.accessibilityservice.AccessibilityService
+ import android.accessibilityservice.GestureDescription
+ import android.graphics.Path
++import android.graphics.Bitmap
++import android.util.Base64
++import android.view.Display
++import android.os.Build
++import com.jarvis.agent.ai.ScreenImage
++import kotlinx.coroutines.suspendCancellableCoroutine
++import kotlinx.coroutines.withTimeoutOrNull
++import java.io.ByteArrayOutputStream
++import kotlin.coroutines.resume
++import kotlin.math.min
+ import android.graphics.Rect
+ import android.os.Bundle
+ import android.view.accessibility.AccessibilityEvent
+@@ -90,6 +100,74 @@
+         for (i in 0 until node.childCount) collect(node.getChild(i), out, depth + 1)
+     }
+ 
++    /**
++     * On-demand screenshot (Android 11+, API 30). Not persisted to storage.
++     * Android 14+ targets the active app window, avoiding the Jarvis overlay.
++     * Protected/secure windows are intentionally not bypassed.
++     */
++    suspend fun captureScreenImage(): ScreenImage? {
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
++        val shot = withTimeoutOrNull(4500) { captureBitmap() } ?: return null
++        return withContext(Dispatchers.Default) {
++            try {
++                val maxEdge = maxOf(shot.width, shot.height)
++                val ratio = min(1f, 2000f / maxEdge)
++                val w = maxOf(1, (shot.width * ratio).toInt())
++                val h = maxOf(1, (shot.height * ratio).toInt())
++                val scaled = if (w == shot.width && h == shot.height) shot
++                    else Bitmap.createScaledBitmap(shot, w, h, true)
++                val out = ByteArrayOutputStream()
++                try {
++                    if (!scaled.compress(Bitmap.CompressFormat.JPEG, 78, out)) return@withContext null
++                    ScreenImage(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP), w, h)
++                } finally {
++                    if (scaled !== shot) scaled.recycle()
++                    out.close()
++                }
++            } catch (_: Exception) {
++                null
++            } finally {
++                shot.recycle()
++            }
++        }
++    }
++
++    private suspend fun captureBitmap(): Bitmap? = withContext(Dispatchers.Main.immediate) {
++        suspendCancellableCoroutine { cont ->
++            val callback = object : TakeScreenshotCallback {
++                override fun onSuccess(result: ScreenshotResult) {
++                    val buffer = result.hardwareBuffer
++                    try {
++                        val hardwareBitmap = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
++                        val copy = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
++                        if (cont.isActive) cont.resume(copy) else copy?.recycle()
++                    } catch (_: Exception) {
++                        if (cont.isActive) cont.resume(null)
++                    } finally {
++                        buffer.close()
++                    }
++                }
++                override fun onFailure(errorCode: Int) {
++                    if (cont.isActive) cont.resume(null)
++                }
++            }
++            try {
++                if (Build.VERSION.SDK_INT >= 34) {
++                    val id = rootInActiveWindow?.windowId
++                    if (id != null && id >= 0) {
++                        takeScreenshotOfWindow(id, mainExecutor, callback)
++                    } else {
++                        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
++                    }
++                } else {
++                    takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
++                }
++            } catch (_: Exception) {
++                if (cont.isActive) cont.resume(null)
++            }
++        }
++    }
++
+     /** نقر على إحداثيات عبر إيماءة. */
+     suspend fun tap(x: Int, y: Int): Boolean {
+         withContext(Dispatchers.Main.immediate) { overlay?.gesture(x, y) }
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/control/OverlaySettings.kt jarvis/app/src/main/java/com/jarvis/agent/control/OverlaySettings.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/control/OverlaySettings.kt	2026-10-22 15:58:54.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/control/OverlaySettings.kt	2026-10-22 18:23:47.000101314 +0000
+@@ -18,6 +18,12 @@
+         prefs(context).edit().putBoolean("effects", enabled).apply()
+     }
+ 
++    // Vision is OFF by default: enabling it sends on-demand screenshots to the selected AI API.
++    fun visionEnabled(context: Context) = prefs(context).getBoolean("vision", false)
++    fun setVisionEnabled(context: Context, enabled: Boolean) {
++        prefs(context).edit().putBoolean("vision", enabled).apply()
++    }
++
+     fun speechEnabled(context: Context) = prefs(context).getBoolean("speech", true)
+     fun setSpeechEnabled(context: Context, enabled: Boolean) {
+         prefs(context).edit().putBoolean("speech", enabled).apply()
+diff -ruN original/jarvis/app/src/main/java/com/jarvis/agent/ui/MainActivity.kt jarvis/app/src/main/java/com/jarvis/agent/ui/MainActivity.kt
+--- original/jarvis/app/src/main/java/com/jarvis/agent/ui/MainActivity.kt	2026-10-22 15:59:44.000000000 +0000
++++ jarvis/app/src/main/java/com/jarvis/agent/ui/MainActivity.kt	2026-10-22 18:23:47.007421403 +0000
+@@ -360,6 +360,7 @@
+     var root by remember { mutableStateOf<Boolean?>(null) }
+     var bubbleEnabled by remember { mutableStateOf(OverlaySettings.bubbleEnabled(ctx)) }
+     var effectsEnabled by remember { mutableStateOf(OverlaySettings.effectsEnabled(ctx)) }
++    var visionEnabled by remember { mutableStateOf(OverlaySettings.visionEnabled(ctx)) }
+ 
+     val micLauncher = rememberLauncherForActivityResult(
+         ActivityResultContracts.RequestPermission()
+@@ -444,6 +445,27 @@
+         }
+ 
+ 
++        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF122C2B))) {
++            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("Vision / SC — الرؤية البصرية", fontWeight = FontWeight.Bold, color = Color(0xFF70E1D2))
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    Text("إرسال صور الشاشة لجارفيس أثناء المهمة", Modifier.weight(1f), fontSize = 13.sp)
++                    Switch(checked = visionEnabled, onCheckedChange = {
++                        visionEnabled = it
++                        OverlaySettings.setVisionEnabled(ctx, it)
++                        // A running task reads preference at the next screenshot.
++                    })
++                }
++                Text(
++                    "عند تفعيلها، يلتقط جارفيس صورة عند استدعاء read_screen ويرسلها مباشرةً " +
++                        "إلى مزوّد الذكاء الاصطناعي المحدد. لا تُحفظ الصور على الهاتف. " +
++                        "قد تحتوي صور الشاشة على بيانات شخصية أو كلمات مرور، وقد تُحتسب تكلفة للصور. " +
++                        "تحتاج Android 11 أو أحدث؛ على الأنظمة الأقدم يبقى وصف الشاشة النصي متاحاً.",
++                    fontSize = 12.sp, color = Color(0xFFB6D7D0)
++                )
++            }
++        }
++
+         PermRow(
+             "صلاحية الروت (اختيارية)",
+             when (root) {
+diff -ruN original/jarvis/app/src/main/res/xml/accessibility_config.xml jarvis/app/src/main/res/xml/accessibility_config.xml
+--- original/jarvis/app/src/main/res/xml/accessibility_config.xml	2026-10-22 12:49:38.000000000 +0000
++++ jarvis/app/src/main/res/xml/accessibility_config.xml	2026-10-22 18:23:47.000158306 +0000
+@@ -5,5 +5,6 @@
+     android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+     android:canRetrieveWindowContent="true"
+     android:canPerformGestures="true"
++    android:canTakeScreenshot="true"
+     android:notificationTimeout="100"
+     android:description="@string/accessibility_desc" />
