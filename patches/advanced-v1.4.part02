@@ -1,0 +1,178 @@
++                            put("content", t.content)
++                        } else {
++                            putJsonArray("content") {
++                                add(buildJsonObject { put("type", "text"); put("text", t.content) })
++                                add(buildJsonObject {
++                                    put("type", "image")
++                                    putJsonObject("source") {
++                                        put("type", "base64")
++                                        put("media_type", "image/jpeg")
++                                        put("data", t.image.jpegBase64)
++                                    }
++                                })
++                            }
++                        }
+                     })
+                     i++
+                 }
+--- a/app/src/main/java/com/jarvis/agent/ai/GeminiProvider.kt
++++ b/app/src/main/java/com/jarvis/agent/ai/GeminiProvider.kt
+@@ -66,6 +66,15 @@
+                             putJsonObject("response") { put("result", t.content) }
+                         }
+                     })
++                    // Inline JPEG as a sibling part of this tool response.
++                    t.image?.let { img ->
++                        parts.add(buildJsonObject {
++                            putJsonObject("inlineData") {
++                                put("mimeType", "image/jpeg")
++                                put("data", img.jpegBase64)
++                            }
++                        })
++                    }
+                     i++
+                 }
+                 out.add(buildJsonObject {
+--- a/app/src/main/java/com/jarvis/agent/ai/LlmModels.kt
++++ b/app/src/main/java/com/jarvis/agent/ai/LlmModels.kt
+@@ -7,7 +7,16 @@
+     // عند role=TOOL: ناتج تنفيذ الأداة ومعرّفها
+     val toolCallId: String? = null,
+     // عند role=ASSISTANT: استدعاءات أدوات طلبها النموذج
+-    val toolCalls: List<ToolCall> = emptyList()
++    val toolCalls: List<ToolCall> = emptyList(),
++    /** Screen image attached only to the most recent screen observation. */
++    val image: ScreenImage? = null
++)
++
++/** A JPEG screenshot stored in memory for one multimodal model request. */
++data class ScreenImage(
++    val jpegBase64: String,
++    val width: Int,
++    val height: Int
+ )
+ 
+ enum class Role { SYSTEM, USER, ASSISTANT, TOOL }
+--- a/app/src/main/java/com/jarvis/agent/ai/OpenAiProvider.kt
++++ b/app/src/main/java/com/jarvis/agent/ai/OpenAiProvider.kt
+@@ -28,7 +28,29 @@
+                 add(buildJsonObject {
+                     put("role", "system"); put("content", system)
+                 })
+-                messages.forEach { m -> add(encodeMessage(m)) }
++                messages.forEach { m ->
++                    add(encodeMessage(m))
++                    // Chat Completions tool messages accept text only. The subsequent
++                    // user message carries the image and keeps the tool_call_id valid.
++                    if (m.role == Role.TOOL && m.image != null) {
++                        add(buildJsonObject {
++                            put("role", "user")
++                            putJsonArray("content") {
++                                add(buildJsonObject {
++                                    put("type", "text")
++                                    put("text", "صورة الشاشة الحية الملتقطة بواسطة read_screen:")
++                                })
++                                add(buildJsonObject {
++                                    put("type", "image_url")
++                                    putJsonObject("image_url") {
++                                        put("url", "data:image/jpeg;base64,${m.image.jpegBase64}")
++                                        put("detail", "high")
++                                    }
++                                })
++                            }
++                        })
++                    }
++                }
+             }
+             if (tools.isNotEmpty()) {
+                 putJsonArray("tools") { tools.forEach { add(encodeTool(it)) } }
+--- a/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt
++++ b/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt
+@@ -1,5 +1,15 @@
+ package com.jarvis.agent.control
+ 
++import android.content.Intent
++import android.net.Uri
++import android.os.BatteryManager
++import android.os.Build
++import android.provider.Settings
++import android.content.IntentFilter
++import android.media.AudioManager
++import android.view.KeyEvent
++import android.os.SystemClock
++import com.jarvis.agent.ai.ScreenImage
+ import com.jarvis.agent.ai.ParamSpec
+ import com.jarvis.agent.ai.ToolSpec
+ import kotlinx.coroutines.delay
+@@ -19,7 +29,7 @@
+     fun specs(): List<ToolSpec> = listOf(
+         ToolSpec(
+             name = "read_screen",
+-            description = "اقرأ محتوى الشاشة الحالية: التطبيق المفتوح وكل العناصر المرئية (أزرار، نصوص، حقول) مع فهارسها ومواضعها. استخدمها دائماً قبل أي تفاعل لتعرف ما أمامك.",
++            description = "اقرأ الشاشة الحية: نصوص العناصر وفهارسها، وصورة شاشة فعلية (Vision/SC) إن كانت مفعّلة في الإعدادات وعلى Android 11+. اطلبها قبل كل تفاعل مهم وبعده.",
+             parameters = emptyMap()
+         ),
+         ToolSpec(
+@@ -36,7 +46,8 @@
+             description = "اكتب نصاً في حقل الكتابة. حدّد index للحقل إن عُرف، وإلا يُكتب في الحقل المُركّز.",
+             parameters = mapOf(
+                 "text" to ParamSpec("string", "النص المراد كتابته"),
+-                "index" to ParamSpec("integer", "فهرس حقل الكتابة (اختياري)")
++                "index" to ParamSpec("integer", "فهرس حقل الكتابة (اختياري)"),
++                "mode" to ParamSpec("string", "استبدال أو إلحاق أو مسح", listOf("replace", "append", "clear"))
+             ),
+             required = listOf("text")
+         ),
+@@ -46,8 +57,113 @@
+             parameters = mapOf(
+                 "direction" to ParamSpec(
+                     "string", "اتجاه التمرير", listOf("up", "down", "left", "right")
+-                )
++                ),
++                "x1" to ParamSpec("integer", "موضع البداية x (اختياري)"),
++                "y1" to ParamSpec("integer", "موضع البداية y (اختياري)"),
++                "x2" to ParamSpec("integer", "موضع النهاية x (اختياري)"),
++                "y2" to ParamSpec("integer", "موضع النهاية y (اختياري)"),
++                "ms" to ParamSpec("integer", "مدة التمرير")
+             )
++        ),
++        ToolSpec(
++            name = "long_press",
++            description = "اضغط مطولاً على عنصر من آخر read_screen، أو إحداثيات الشاشة الأصلية لفتح قائمة السياق.",
++            parameters = mapOf(
++                "index" to ParamSpec("integer", "فهرس عنصر اختياري"),
++                "x" to ParamSpec("integer", "x"), "y" to ParamSpec("integer", "y"),
++                "ms" to ParamSpec("integer", "مدة الضغط من 400 إلى 5000 مللي ثانية")
++            )
++        ),
++        ToolSpec(
++            name = "double_tap",
++            description = "نقر مزدوج، بإحداثيات أو فهرس عنصر.",
++            parameters = mapOf(
++                "index" to ParamSpec("integer", "فهرس عنصر"),
++                "x" to ParamSpec("integer", "x"), "y" to ParamSpec("integer", "y")
++            )
++        ),
++        ToolSpec(
++            name = "drag",
++            description = "اسحب من نقطة لأخرى (لإعادة ترتيب عنصر أو تحريك شريط). استخدم إحداثيات الشاشة الأصلية.",
++            parameters = mapOf(
++                "x1" to ParamSpec("integer", "بداية أفقية"), "y1" to ParamSpec("integer", "بداية رأسية"),
++                "x2" to ParamSpec("integer", "نهاية أفقية"), "y2" to ParamSpec("integer", "نهاية رأسية"),
++                "ms" to ParamSpec("integer", "مدة السحب")
++            ), required = listOf("x1", "y1", "x2", "y2")
++        ),
++        ToolSpec(
++            name = "pinch",
++            description = "قرّب أو باعد بإصبعين للتكبير والتصغير داخل التطبيقات، لا يحتاج روت.",
++            parameters = mapOf(
++                "x" to ParamSpec("integer", "منتصف المنطقة"), "y" to ParamSpec("integer", "منتصف المنطقة"),
++                "direction" to ParamSpec("string", "التحجيم", listOf("in", "out")),
++                "spread" to ParamSpec("integer", "مسافة الأصابع 40-500")
++            ), required = listOf("direction")
++        ),
++        ToolSpec(
++            name = "tap_text",
++            description = "ابحث عن نص واجهة مرئي وانقر العنصر المطابق بعد التحقق من الشاشة.",
++            parameters = mapOf(
++                "text" to ParamSpec("string", "الجزء المراد مطابقته"),
