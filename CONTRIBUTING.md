@@ -25,3 +25,9 @@ Include Android version, device model, JARVIS version, provider/model, a minimal
 ## Pull requests
 
 Explain your changes, add tests when reasonable, and update README/CHANGELOG if behavior changes.
+
+## License and rights
+
+By submitting a pull request, you agree that your original contribution is submitted under the repository's [MIT License](LICENSE). Please contribute only code, documentation, or assets that you have the right to share under those terms, and disclose any third-party material and its license.
+
+You are welcome to fork JARVIS, maintain an independent variant, or reuse the code in another project. Keeping copyright and license notices is required. Upstream contributions are appreciated but not mandatory.
