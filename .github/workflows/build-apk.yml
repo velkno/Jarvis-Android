@@ -12,18 +12,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Extract Jarvis project
+        shell: bash
         run: |
+          set -euo pipefail
           unzip -q Jarvis-v1.2-build-ready-source.zip
+          test -f jarvis/gradlew
           cp -a jarvis/. .
           rm -rf jarvis
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          if [ ! -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platforms/android-34" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -name sdkmanager -type f | head -n 1)"
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
+          fi
       - name: Build debug APK
         run: |
           chmod +x gradlew
