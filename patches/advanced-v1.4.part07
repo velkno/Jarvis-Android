@@ -1,0 +1,145 @@
++        return withTimeoutOrNull(6000) { result.await() } ?: false
+     }
+ }
+ 
+@@ -204,27 +420,42 @@
+     val className: String,
+     val clickable: Boolean,
+     val editable: Boolean,
++    val scrollable: Boolean,
++    val enabled: Boolean,
++    val checked: Boolean,
++    val focused: Boolean,
+     val centerX: Int,
+     val centerY: Int,
+-    val bounds: Rect
++    val bounds: Rect,
++    val resourceId: String = "",
++    val password: Boolean = false
+ )
+ 
+ /** لقطة كاملة لحالة الشاشة. */
+ data class ScreenSnapshot(
+     val packageName: String?,
+-    val elements: List<UiElement>
++    val elements: List<UiElement>,
++    val capturedAt: Long = 0L
+ ) {
+     /** تحويلها إلى نص يفهمه النموذج. */
+     fun toPrompt(): String {
+         if (elements.isEmpty()) return "الشاشة فارغة أو لا يمكن قراءتها. التطبيق: ${packageName ?: "غير معروف"}"
+-        val sb = StringBuilder("التطبيق الحالي: ${packageName ?: "غير معروف"}\nعناصر الشاشة:\n")
++        val dm = android.content.res.Resources.getSystem().displayMetrics
++        val sb = StringBuilder("التطبيق الحالي: ${packageName ?: "غير معروف"}; أبعاد العرض: ${dm.widthPixels}x${dm.heightPixels}\nعناصر الشاشة:\n")
+         elements.take(80).forEach { e ->
+             val kind = when {
+                 e.editable -> "حقل كتابة"
+                 e.clickable -> "زر/قابل للنقر"
+                 else -> "نص"
+             }
+-            sb.append("[${e.index}] $kind: \"${e.text}\" @(${e.centerX},${e.centerY})\n")
++            val flags = buildList {
++                if (e.scrollable) add("scroll")
++                if (e.checked) add("checked")
++                if (e.focused) add("focused")
++                if (!e.enabled) add("disabled")
++            }.joinToString(",")
++            sb.append("[${e.index}] $kind: \"${e.text.take(160)}\" @(${e.centerX},${e.centerY}) ")
++            sb.append("bounds=${e.bounds.left},${e.bounds.top},${e.bounds.right},${e.bounds.bottom} id=${e.resourceId.take(85)} $flags\n")
+         }
+         return sb.toString()
+     }
+--- a/app/src/main/java/com/jarvis/agent/control/OverlaySettings.kt
++++ b/app/src/main/java/com/jarvis/agent/control/OverlaySettings.kt
+@@ -18,9 +18,21 @@
+         prefs(context).edit().putBoolean("effects", enabled).apply()
+     }
+ 
++    // Vision is OFF by default: enabling it sends on-demand screenshots to the selected AI API.
++    fun visionEnabled(context: Context) = prefs(context).getBoolean("vision", false)
++    fun setVisionEnabled(context: Context, enabled: Boolean) {
++        prefs(context).edit().putBoolean("vision", enabled).apply()
++    }
++
+     fun speechEnabled(context: Context) = prefs(context).getBoolean("speech", true)
+     fun setSpeechEnabled(context: Context, enabled: Boolean) {
+         prefs(context).edit().putBoolean("speech", enabled).apply()
++    }
++
++    // An opt-in, read-only diagnostic tool on rooted phones. Off by default.
++    fun rootDiagnosticsEnabled(context: Context) = prefs(context).getBoolean("root_diagnostics", false)
++    fun setRootDiagnosticsEnabled(context: Context, enabled: Boolean) {
++        prefs(context).edit().putBoolean("root_diagnostics", enabled).apply()
+     }
+ 
+     fun bubbleY(context: Context) = prefs(context).getInt("bubble_y", 170)
+--- a/app/src/main/java/com/jarvis/agent/ui/MainActivity.kt
++++ b/app/src/main/java/com/jarvis/agent/ui/MainActivity.kt
+@@ -360,6 +360,8 @@
+     var root by remember { mutableStateOf<Boolean?>(null) }
+     var bubbleEnabled by remember { mutableStateOf(OverlaySettings.bubbleEnabled(ctx)) }
+     var effectsEnabled by remember { mutableStateOf(OverlaySettings.effectsEnabled(ctx)) }
++    var visionEnabled by remember { mutableStateOf(OverlaySettings.visionEnabled(ctx)) }
++    var rootDiagnostics by remember { mutableStateOf(OverlaySettings.rootDiagnosticsEnabled(ctx)) }
+ 
+     val micLauncher = rememberLauncherForActivityResult(
+         ActivityResultContracts.RequestPermission()
+@@ -409,6 +411,21 @@
+ 
+         PermRow("الميكروفون", "للأوامر الصوتية.", mic) {
+             micLauncher.launch(Manifest.permission.RECORD_AUDIO)
++        }
++
++        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF282019))) {
++            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
++                Text("تحكم متقدم 1.4", fontWeight = FontWeight.Bold, color = Color(0xFFFFCC91))
++                Text("ضغط مطوّل ومزدوج، سحب وإفلات، تكبير بإصبعين، تصفح القوائم، حافظة، التحكم بمستوى الصوت والوسائط، وفتح إعدادات الهاتف.", fontSize = 12.sp)
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    Text("تشخيص الروت (قراءة فقط)", Modifier.weight(1f), fontSize = 13.sp)
++                    Switch(checked = rootDiagnostics, onCheckedChange = {
++                        rootDiagnostics = it
++                        OverlaySettings.setRootDiagnosticsEnabled(ctx, it)
++                    })
++                }
++                Text("لا يُنفّذ أوامر shell عشوائية، ولا يتجاوز كلمات المرور أو حماية النظام. يبدأ فقط بعد طلبك.", fontSize = 12.sp, color = Color(0xFFFFCC91))
++            }
+         }
+ 
+         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF14253C))) {
+@@ -443,6 +460,27 @@
+             }
+         }
+ 
++
++        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF122C2B))) {
++            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("Vision / SC — الرؤية البصرية", fontWeight = FontWeight.Bold, color = Color(0xFF70E1D2))
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    Text("إرسال صور الشاشة لجارفيس أثناء المهمة", Modifier.weight(1f), fontSize = 13.sp)
++                    Switch(checked = visionEnabled, onCheckedChange = {
++                        visionEnabled = it
++                        OverlaySettings.setVisionEnabled(ctx, it)
++                        // A running task reads preference at the next screenshot.
++                    })
++                }
++                Text(
++                    "عند تفعيلها، يلتقط جارفيس صورة عند استدعاء read_screen ويرسلها مباشرةً " +
++                        "إلى مزوّد الذكاء الاصطناعي المحدد. لا تُحفظ الصور على الهاتف. " +
++                        "قد تحتوي صور الشاشة على بيانات شخصية أو كلمات مرور، وقد تُحتسب تكلفة للصور. " +
++                        "تحتاج Android 11 أو أحدث؛ على الأنظمة الأقدم يبقى وصف الشاشة النصي متاحاً.",
++                    fontSize = 12.sp, color = Color(0xFFB6D7D0)
++                )
++            }
++        }
+ 
+         PermRow(
+             "صلاحية الروت (اختيارية)",
+--- a/app/src/main/res/xml/accessibility_config.xml
++++ b/app/src/main/res/xml/accessibility_config.xml
+@@ -5,5 +5,6 @@
+     android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+     android:canRetrieveWindowContent="true"
+     android:canPerformGestures="true"
++    android:canTakeScreenshot="true"
+     android:notificationTimeout="100"
+     android:description="@string/accessibility_desc" />
