@@ -1,0 +1,165 @@
++                "exact" to ParamSpec("boolean", "مطابقة كاملة بدلاً من احتواء")
++            ), required = listOf("text")
++        ),
++        ToolSpec(
++            name = "scroll_element",
++            description = "مرر الحاوية القابلة للتمرير عند إحداثيات أو موضع عنصر، مع تفضيل تمرير واجهة الوصول.",
++            parameters = mapOf(
++                "index" to ParamSpec("integer", "فهرس العنصر"), "x" to ParamSpec("integer", "x"),
++                "y" to ParamSpec("integer", "y"), "direction" to ParamSpec("string", "up أو down", listOf("up", "down"))
++            ), required = listOf("direction")
++        ),
++        ToolSpec(
++            name = "wait_for",
++            description = "انتظر حتى يظهر نص محدّد على الشاشة؛ يجري عدة عمليات فحص خلال مهلة محدودة، بلا تصوير متكرر.",
++            parameters = mapOf(
++                "text" to ParamSpec("string", "النص المراد ظهوره"),
++                "timeout_ms" to ParamSpec("integer", "المهلة 500-10000 مللي ثانية")
++            ), required = listOf("text")
++        ),
++        ToolSpec(
++            name = "open_url",
++            description = "افتح رابط ويب من نوع HTTPS أو HTTP في المتصفح.",
++            parameters = mapOf("url" to ParamSpec("string", "الرابط الكامل")), required = listOf("url")
++        ),
++        ToolSpec(
++            name = "open_settings",
++            description = "افتح صفحة إعدادات نظام محددة: wifi, bluetooth, display, accessibility, apps, battery, sound, notifications.",
++            parameters = mapOf("page" to ParamSpec("string", "صفحة الإعدادات", listOf("wifi", "bluetooth", "display", "accessibility", "apps", "battery", "sound", "notifications"))),
++            required = listOf("page")
++        ),
++        ToolSpec(
++            name = "device_status",
++            description = "بيانات الجهاز والبطارية وأبعاد الشاشة وتوافر الوصول والرؤية والروت؛ لا يحتاج أذونات جديدة.",
++            parameters = emptyMap()
++        ),
++        ToolSpec(
++            name = "clipboard_write",
++            description = "انسخ نصاً إلى حافظة الهاتف (كتابة فقط، لا تقرأ بيانات المستخدم السابقة).",
++            parameters = mapOf("text" to ParamSpec("string", "نص الحافظة")), required = listOf("text")
++        ),
++        ToolSpec(
++            name = "clipboard_paste",
++            description = "ألصق الحافظة في حقل الكتابة المحدد الآن، دون قراءة محتواها من جارفيس.",
++            parameters = emptyMap()
++        ),
++        ToolSpec(
++            name = "set_volume",
++            description = "غير مستوى الصوت خطوة للأعلى أو الأسفل لقناة الوسائط أو الرنين (لا يحتاج روت).",
++            parameters = mapOf(
++                "channel" to ParamSpec("string", "media أو ring", listOf("media", "ring")),
++                "direction" to ParamSpec("string", "up أو down", listOf("up", "down"))
++            ), required = listOf("direction")
++        ),
++        ToolSpec(
++            name = "media_key",
++            description = "تحكم بمشغل الوسائط الحالي: play، pause، next، previous (إن سمح التطبيق).",
++            parameters = mapOf(
++                "key" to ParamSpec("string", "media key", listOf("play", "pause", "next", "previous"))
++            ), required = listOf("key")
+         ),
+         ToolSpec(
+             name = "press_key",
+@@ -55,7 +171,7 @@
+             parameters = mapOf(
+                 "key" to ParamSpec(
+                     "string", "الزر",
+-                    listOf("back", "home", "recents", "notifications", "enter")
++                    listOf("back", "home", "recents", "notifications", "quick_settings", "enter")
+                 )
+             ),
+             required = listOf("key")
+@@ -75,7 +191,7 @@
+         ),
+         ToolSpec(
+             name = "run_shell",
+-            description = "نفّذ أمر shell بصلاحيات الروت للمهام المتقدمة. يعمل فقط إن كان الهاتف مروّتاً؛ وإلا استخدم الأدوات الأخرى.",
++            description = "اعرض معلومات نظام القراءة فقط مع الروت (getprop, pm list packages, dumpsys battery, settings get). الأوامر المخصصة أو المعدّلة ممنوعة للسلامة.",
+             parameters = mapOf(
+                 "command" to ParamSpec("string", "أمر الـ shell")
+             ),
+@@ -96,7 +212,7 @@
+             ),
+             required = listOf("summary")
+         )
+-    )
++    ).filter { it.name != "run_shell" || OverlaySettings.rootDiagnosticsEnabled(context) }
+ 
+     /** ينفّذ أداة ويعيد ناتجاً نصياً يُعاد للنموذج. */
+     suspend fun execute(name: String, argsJson: String): ToolOutcome {
+@@ -104,47 +220,206 @@
+             json.parseToJsonElement(argsJson.ifEmpty { "{}" }).jsonObject
+         }.getOrDefault(JsonObject(emptyMap()))
+ 
++        val acc = JarvisAccessibilityService.instance
++
+         fun intArg(k: String): Int? = args[k]?.jsonPrimitive?.intOrNull
+         fun strArg(k: String): String? = args[k]?.jsonPrimitive?.contentOrNull
+-
+-        val acc = JarvisAccessibilityService.instance
++        fun boolArg(k: String): Boolean = args[k]?.jsonPrimitive?.booleanOrNull ?: false
++        fun coords(): Pair<Int, Int>? {
++            val idx = intArg("index")
++            if (idx != null) {
++                val snap = lastSnapshot ?: return null
++                if (acc != null && (acc.currentPackage() != snap.packageName ||
++                    SystemClock.elapsedRealtime() - snap.capturedAt > 90000)) return null
++                val e = snap.elements.getOrNull(idx) ?: return null
++                return e.centerX to e.centerY
++            }
++            val x = intArg("x") ?: return null
++            val y = intArg("y") ?: return null
++            return x to y
++        }
+ 
+         return when (name) {
+             "read_screen" -> {
+                 val snap = acc?.describeScreen()
+                     ?: return ToolOutcome.text("خدمة الوصول غير مفعّلة. فعّلها من الإعدادات.")
+                 lastSnapshot = snap
+-                ToolOutcome.text(snap.toPrompt())
++                if (!OverlaySettings.visionEnabled(context)) {
++                    ToolOutcome.text(snap.toPrompt() + "\nVision/SC: غير مفعّل من الإعدادات.")
++                } else if (android.os.Build.VERSION.SDK_INT < 30) {
++                    ToolOutcome.text(snap.toPrompt() + "\nVision/SC يتطلب Android 11 أو أحدث، استخدم العناصر النصية.")
++                } else {
++                    val screenshot = acc.captureScreenImage()
++                    if (screenshot == null) {
++                        ToolOutcome.text(snap.toPrompt() + "\nتعذّر تصوير الشاشة (نافذة محمية أو إذن غير متاح). استخدم العناصر النصية.")
++                    } else {
++                        ToolOutcome(
++                            snap.toPrompt() + "\nأُرفقت صورة حية للشاشة (" +
++                                "${screenshot.width}x${screenshot.height}). استخدم مواضع العناصر الأصلية للنقر.",
++                            image = screenshot
++                        )
++                    }
++                }
+             }
+ 
+             "tap" -> {
+                 val idx = intArg("index")
+                 if (idx != null) {
+-                    val el = lastSnapshot?.elements?.getOrNull(idx)
++                    val snap = lastSnapshot
++                    val el = snap?.elements?.getOrNull(idx)
+                         ?: return ToolOutcome.text("لا يوجد عنصر بالفهرس $idx. اقرأ الشاشة أولاً.")
+-                    val ok = acc?.tap(el.centerX, el.centerY)
+-                        ?: RootShell.tap(el.centerX, el.centerY).success
++                    if (acc == null || snap.packageName != acc.currentPackage() ||
++                        SystemClock.elapsedRealtime() - snap.capturedAt > 90000)
++                        return ToolOutcome.text("تغيرت الشاشة أو انتهت صلاحية الفهرس؛ نفّذ read_screen مجدداً.")
++                    val ok = acc.clickElement(el) || acc.tap(el.centerX, el.centerY)
+                     ToolOutcome.text(if (ok) "تم النقر على \"${el.text}\"" else "فشل النقر")
+                 } else {
+                     val x = intArg("x"); val y = intArg("y")
+                     if (x == null || y == null)
+                         return ToolOutcome.text("حدّد index أو (x,y).")
+-                    val ok = acc?.tap(x, y) ?: RootShell.tap(x, y).success
++                    val ok = acc?.tap(x, y) ?: false
+                     ToolOutcome.text(if (ok) "تم النقر على ($x,$y)" else "فشل النقر")
+                 }
+             }
+ 
++            "long_press" -> {
++                val (x, y) = coords() ?: return ToolOutcome.text("اقرأ الشاشة وحدد index أو x,y.")
++                val idx = intArg("index")
