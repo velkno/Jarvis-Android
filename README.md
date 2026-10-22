@@ -10,6 +10,7 @@ A user-controlled Android agent that can **see the current screen**, decide what
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-Experimental-orange)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **OpenAI · Anthropic Claude · Google Gemini**
 
@@ -97,7 +98,13 @@ For a detailed walkthrough, see [Development guide](docs/DEVELOPMENT.md), [Chang
 
 Bug reports, feature proposals, documentation, translations and pull requests are welcome. Check [Contributing](CONTRIBUTING.md) and use **Issues** for bug reports. Please do not post API keys, private screenshots or personal data in public issues. Report vulnerabilities privately using [Security policy](SECURITY.md).
 
-**Licensing:** This repository has not yet been assigned an open-source license. Public visibility does not by itself grant reuse or redistribution rights. The maintainer may add an explicit license after reviewing project assets and dependencies.
+## License and reuse
+
+JARVIS's original project code is distributed under the **[MIT License](LICENSE)** (Copyright © 2026 velkno). You may use, copy, modify, fork, redistribute, and include it in commercial applications, provided you retain the copyright and license notices. You **do not need to ask for permission**.
+
+This license does not override licenses belonging to third-party libraries, artwork, fonts, trademarks, or other content; please respect their separate terms. API services (OpenAI, Claude, and Gemini) require their own accounts, terms, and API keys.
+
+**Help JARVIS evolve:** use the GitHub **Fork** button, make your change on a branch, and open a **Pull Request** with test results. See [Contributing](CONTRIBUTING.md). Fork authors are welcome to keep independent versions, but sharing improvements upstream benefits everybody.
 
 ## بالعربية
 
@@ -107,6 +114,7 @@ Bug reports, feature proposals, documentation, translations and pull requests ar
 - **الروت اختياري** وماشي ضروري للاستعمال العادي.
 - الصور ومعلومات الشاشة يمكن تمشي لمزود الذكاء الاصطناعي اللي اخترتيه؛ ما تفعّلش الرؤية فالتطبيقات الحساسة.
 - هادي نسخة **تجريبية**، والبناء نجح ولكن خاصها تجارب على هواتف حقيقية.
+- المشروع متاح لإعادة الاستخدام والتعديل والتوزيع، وحتى الاستعمال التجاري، بموجب [رخصة MIT](LICENSE) مع الاحتفاظ بإشعار الحقوق والرخصة.
 
 ---
 
