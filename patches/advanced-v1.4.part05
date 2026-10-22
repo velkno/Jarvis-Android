@@ -1,0 +1,174 @@
+                 ToolOutcome.text(if (ok) "تمت كتابة النص." else "فشلت الكتابة.")
+             }
+ 
+             "swipe" -> {
+                 val dir = strArg("direction") ?: "up"
+-                val (x1, y1, x2, y2) = swipeCoords(dir)
+-                val ok = acc?.swipe(x1, y1, x2, y2) ?: RootShell.swipe(x1, y1, x2, y2).success
++                val (dx1, dy1, dx2, dy2) = swipeCoords(dir)
++                val x1 = intArg("x1") ?: dx1; val y1 = intArg("y1") ?: dy1
++                val x2 = intArg("x2") ?: dx2; val y2 = intArg("y2") ?: dy2
++                val ok = acc?.swipe(x1, y1, x2, y2, (intArg("ms") ?: 300).toLong().coerceIn(100, 5000)) ?: false
+                 ToolOutcome.text(if (ok) "تم التمرير $dir" else "فشل التمرير")
+             }
+ 
+@@ -155,6 +430,7 @@
+                     "home" -> acc?.pressHome() ?: RootShell.keyEvent(3).success
+                     "recents" -> acc?.openRecents() ?: RootShell.keyEvent(187).success
+                     "notifications" -> acc?.openNotifications() ?: false
++                    "quick_settings" -> acc?.openQuickSettings() ?: false
+                     "enter" -> acc?.pressEnter() ?: RootShell.keyEvent(66).success
+                     else -> false
+                 }
+@@ -176,11 +452,13 @@
+             }
+ 
+             "run_shell" -> {
++                if (!OverlaySettings.rootDiagnosticsEnabled(context))
++                    return ToolOutcome.text("تشخيص الروت مُعطّل؛ فعّله يدوياً في الصلاحيات أولاً.")
+                 val cmd = strArg("command") ?: return ToolOutcome.text("الأمر مفقود.")
+                 if (!RootShell.isAvailable())
+                     return ToolOutcome.text("الهاتف غير مروّت، لذلك run_shell غير متاح. أنجز المهمة بالأدوات الأخرى (open_app، tap، type_text، swipe…).")
+-                if (isDangerous(cmd))
+-                    return ToolOutcome.text("رُفض الأمر: قد يتلف النظام أو يمسح البيانات نهائياً. اطلب من المستخدم تنفيذه يدوياً إن كان مقصوداً.")
++                if (!isReadOnlyCommand(cmd))
++                    return ToolOutcome.text("run_shell يسمح فقط بأوامر قراءة آمنة؛ الأوامر المؤثرة على الملفات والنظام ممنوعة.")
+                 ToolOutcome.text(RootShell.exec(cmd).asText())
+             }
+ 
+@@ -211,22 +489,22 @@
+         }
+     }
+ 
+-    /** حماية أساسية من الأوامر المدمّرة التي لا يمكن التراجع عنها. */
+-    private fun isDangerous(cmd: String): Boolean {
+-        val c = cmd.lowercase().replace(Regex("\\s+"), " ")
+-        val patterns = listOf(
+-            "rm -rf /", "rm -rf /*", "rm -rf /system", "rm -rf /data", "rm -rf /sdcard",
+-            "mkfs", "dd if=", "of=/dev/block", "format ", "wipe ", "reboot bootloader",
+-            "> /dev/block", "flash_image"
+-        )
+-        return patterns.any { c.contains(it) }
++    /** A strict allowlist prevents shell metacharacters and arbitrary root execution. */
++    private fun isReadOnlyCommand(command: String): Boolean {
++        val c = command.trim()
++        return c == "getprop" ||
++            c == "pm list packages" || c == "pm list packages -3" ||
++            c == "dumpsys battery" || c == "dumpsys display" ||
++            c.matches(Regex("settings get (system|secure|global) [a-zA-Z0-9_]+")) ||
++            c.matches(Regex("getprop [a-zA-Z0-9_.-]+"))
+     }
+ }
+ 
+ /** ناتج تنفيذ أداة. */
+ data class ToolOutcome(
+     val result: String,
+-    val isFinish: Boolean = false
++    val isFinish: Boolean = false,
++    val image: ScreenImage? = null
+ ) {
+     companion object {
+         fun text(s: String) = ToolOutcome(s, false)
+--- a/app/src/main/java/com/jarvis/agent/control/JarvisAccessibilityService.kt
++++ b/app/src/main/java/com/jarvis/agent/control/JarvisAccessibilityService.kt
+@@ -3,8 +3,20 @@
+ import android.accessibilityservice.AccessibilityService
+ import android.accessibilityservice.GestureDescription
+ import android.graphics.Path
++import android.graphics.PointF
++import android.graphics.Bitmap
++import android.util.Base64
++import android.view.Display
++import android.os.Build
++import com.jarvis.agent.ai.ScreenImage
++import kotlinx.coroutines.suspendCancellableCoroutine
++import kotlinx.coroutines.withTimeoutOrNull
++import java.io.ByteArrayOutputStream
++import kotlin.coroutines.resume
++import kotlin.math.min
+ import android.graphics.Rect
+ import android.os.Bundle
++import android.os.SystemClock
+ import android.view.accessibility.AccessibilityEvent
+ import android.view.accessibility.AccessibilityNodeInfo
+ import kotlinx.coroutines.CompletableDeferred
+@@ -60,15 +72,16 @@
+         val root = rootInActiveWindow ?: return ScreenSnapshot(null, emptyList())
+         val elements = mutableListOf<UiElement>()
+         collect(root, elements)
+-        return ScreenSnapshot(root.packageName?.toString(), elements)
++        return ScreenSnapshot(root.packageName?.toString(), elements, SystemClock.elapsedRealtime())
+     }
+ 
+     private fun collect(node: AccessibilityNodeInfo?, out: MutableList<UiElement>, depth: Int = 0) {
+-        if (node == null || depth > 60) return
+-        val text = node.text?.toString()
++        if (node == null || depth > 60 || out.size >= 140) return
++        // Password field content must not be sent to the remote AI provider.
++        val text = if (node.isPassword) "•••• (password hidden)" else node.text?.toString()
+         val desc = node.contentDescription?.toString()
+         val label = (text ?: desc)?.trim()
+-        val usable = node.isClickable || node.isEditable || node.isCheckable ||
++        val usable = node.isClickable || node.isEditable || node.isCheckable || node.isScrollable ||
+             (!label.isNullOrBlank() && node.isVisibleToUser)
+         if (usable && node.isVisibleToUser) {
+             val b = Rect().also { node.getBoundsInScreen(it) }
+@@ -80,14 +93,88 @@
+                         className = node.className?.toString()?.substringAfterLast('.') ?: "",
+                         clickable = node.isClickable,
+                         editable = node.isEditable,
++                        scrollable = node.isScrollable,
++                        enabled = node.isEnabled,
++                        checked = node.isCheckable && node.isChecked,
++                        focused = node.isFocused,
+                         centerX = b.centerX(),
+                         centerY = b.centerY(),
+-                        bounds = b
++                        bounds = b,
++                        resourceId = node.viewIdResourceName.orEmpty(),
++                        password = node.isPassword
+                     )
+                 )
+             }
+         }
+         for (i in 0 until node.childCount) collect(node.getChild(i), out, depth + 1)
++    }
++
++    /**
++     * On-demand screenshot (Android 11+, API 30). Not persisted to storage.
++     * Android 14+ targets the active app window, avoiding the Jarvis overlay.
++     * Protected/secure windows are intentionally not bypassed.
++     */
++    suspend fun captureScreenImage(): ScreenImage? {
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
++        val shot = withTimeoutOrNull(4500) { captureBitmap() } ?: return null
++        return withContext(Dispatchers.Default) {
++            try {
++                val maxEdge = maxOf(shot.width, shot.height)
++                val ratio = min(1f, 2000f / maxEdge)
++                val w = maxOf(1, (shot.width * ratio).toInt())
++                val h = maxOf(1, (shot.height * ratio).toInt())
++                val scaled = if (w == shot.width && h == shot.height) shot
++                    else Bitmap.createScaledBitmap(shot, w, h, true)
++                val out = ByteArrayOutputStream()
++                try {
++                    if (!scaled.compress(Bitmap.CompressFormat.JPEG, 78, out)) return@withContext null
++                    ScreenImage(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP), w, h)
++                } finally {
++                    if (scaled !== shot) scaled.recycle()
++                    out.close()
++                }
++            } catch (_: Exception) {
++                null
++            } finally {
++                shot.recycle()
++            }
++        }
++    }
++
++    private suspend fun captureBitmap(): Bitmap? = withContext(Dispatchers.Main.immediate) {
++        suspendCancellableCoroutine { cont ->
++            val callback = object : TakeScreenshotCallback {
++                override fun onSuccess(result: ScreenshotResult) {
++                    val buffer = result.hardwareBuffer
++                    try {
