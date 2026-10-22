@@ -1,0 +1,13 @@
+--- a/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt
++++ b/app/src/main/java/com/jarvis/agent/control/DeviceTools.kt
+@@ -286,8 +286,8 @@
+                 val (x, y) = coords() ?: return ToolOutcome.text("اقرأ الشاشة وحدد index أو x,y.")
+                 val idx = intArg("index")
+                 val el = idx?.let { lastSnapshot?.elements?.getOrNull(it) }
+-                val native = el != null && acc?.currentPackage() == lastSnapshot?.packageName && acc.clickElement(el, true)
+-                val ok = native || (acc?.longPress(x, y, (intArg("ms") ?: 900).toLong()) ?: false)
++                val usedNative = el != null && acc != null && acc.currentPackage() == lastSnapshot?.packageName && acc.clickElement(el, true)
++                val ok = usedNative || (acc?.longPress(x, y, (intArg("ms") ?: 900).toLong()) ?: false)
+                 ToolOutcome.text(if (ok) "تم الضغط المطول على ($x,$y)" else "تعذّر الضغط المطول. فعّل إمكانية الوصول.")
+             }
+             "double_tap" -> {
