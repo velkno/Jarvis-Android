@@ -3,8 +3,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 permissions:
   contents: read
 jobs:
@@ -13,15 +11,19 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Extract Jarvis project
+      - name: Extract source and apply Jarvis v1.4 patch
         shell: bash
         run: |
           set -euo pipefail
           unzip -q Jarvis-v1.2-build-ready-source.zip
-          test -f jarvis/gradlew
-          patch --batch -p1 < Jarvis-v1.4-features.patch
           cp -a jarvis/. .
           rm -rf jarvis
+          : > /tmp/advanced-v14.patch
+          for part in patches/advanced-v1.4.part*; do
+            cat "$part" >> /tmp/advanced-v14.patch
+            printf '\n' >> /tmp/advanced-v14.patch
+          done
+          patch --batch -p1 < /tmp/advanced-v14.patch
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -31,19 +33,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
           if [ ! -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platforms/android-34" ]; then
             SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -name sdkmanager -type f | head -n 1)"
             yes | "$SDKMANAGER" --licenses >/dev/null || true
             "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
           fi
-      - name: Build debug APK
+      - name: Build APK
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug
-      - name: Upload APK
+      - name: Upload Jarvis APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jarvis-v1.4-APK
+          name: Jarvis-v1.4-Advanced-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
