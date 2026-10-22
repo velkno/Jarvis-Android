@@ -1,0 +1,179 @@
++                        val hardwareBitmap = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
++                        val copy = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
++                        if (cont.isActive) cont.resume(copy) else copy?.recycle()
++                    } catch (_: Exception) {
++                        if (cont.isActive) cont.resume(null)
++                    } finally {
++                        buffer.close()
++                    }
++                }
++                override fun onFailure(errorCode: Int) {
++                    if (cont.isActive) cont.resume(null)
++                }
++            }
++            try {
++                if (Build.VERSION.SDK_INT >= 34) {
++                    val id = rootInActiveWindow?.windowId
++                    if (id != null && id >= 0) {
++                        takeScreenshotOfWindow(id, mainExecutor, callback)
++                    } else {
++                        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
++                    }
++                } else {
++                    takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
++                }
++            } catch (_: Exception) {
++                if (cont.isActive) cont.resume(null)
++            }
++        }
+     }
+ 
+     /** نقر على إحداثيات عبر إيماءة. */
+@@ -110,6 +197,134 @@
+             .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+             .build()
+         return dispatch(gesture)
++    }
++
++    /** Press and hold a point, useful for context menus and drag handles. */
++    suspend fun longPress(x: Int, y: Int, durationMs: Long = 900): Boolean {
++        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
++        val duration = durationMs.coerceIn(400, 5000)
++        withContext(Dispatchers.Main.immediate) { overlay?.gesture(x, y) }
++        return dispatch(GestureDescription.Builder()
++            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
++            .build())
++    }
++
++    /** Two taps must be part of a single gesture to avoid a race with the UI. */
++    suspend fun doubleTap(x: Int, y: Int): Boolean {
++        withContext(Dispatchers.Main.immediate) { overlay?.gesture(x, y) }
++        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
++        return dispatch(GestureDescription.Builder()
++            .addStroke(GestureDescription.StrokeDescription(path, 0, 65))
++            .addStroke(GestureDescription.StrokeDescription(path, 150, 65))
++            .build())
++    }
++
++    suspend fun drag(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 900): Boolean {
++        val path = Path().apply {
++            moveTo(x1.toFloat(), y1.toFloat())
++            lineTo(x2.toFloat(), y2.toFloat())
++        }
++        withContext(Dispatchers.Main.immediate) { overlay?.gesture(x1, y1, x2, y2, durationMs) }
++        return dispatch(GestureDescription.Builder()
++            .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs.coerceIn(200, 5000)))
++            .build())
++    }
++
++    /** Perform two simultaneous finger strokes to zoom in/out. */
++    suspend fun pinch(centerX: Int, centerY: Int, zoomIn: Boolean, spread: Int = 220): Boolean {
++        val distance = spread.coerceIn(40, 500)
++        val close = (distance / 5f).coerceAtLeast(15f)
++        val far = distance.toFloat()
++        fun stroke(side: Float): GestureDescription.StrokeDescription {
++            val start = if (zoomIn) close else far
++            val end = if (zoomIn) far else close
++            val path = Path().apply {
++                moveTo(centerX + side * start, centerY.toFloat())
++                lineTo(centerX + side * end, centerY.toFloat())
++            }
++            return GestureDescription.StrokeDescription(path, 0, 500)
++        }
++        return dispatch(GestureDescription.Builder()
++            .addStroke(stroke(-1f)).addStroke(stroke(1f)).build())
++    }
++
++    /** Find a labeled element by accessibility text/description, allowing first-match automation. */
++    fun matchElement(text: String, exact: Boolean = false): UiElement? {
++        if (text.isBlank()) return null
++        return describeScreen().elements.firstOrNull {
++            if (exact) it.text.equals(text, ignoreCase = true)
++            else it.text.contains(text, ignoreCase = true)
++        }
++    }
++
++    /** Scroll the closest accessible scrolling container to a point or element. */
++    fun scrollAt(x: Int, y: Int, forward: Boolean): Boolean {
++        val root = rootInActiveWindow ?: return false
++        val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
++            else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
++        fun walk(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
++            val b = Rect().also { node.getBoundsInScreen(it) }
++            if (!b.contains(x, y)) return null
++            for (i in 0 until node.childCount) {
++                val child = node.getChild(i) ?: continue
++                walk(child)?.let { return it }
++            }
++            return if (node.isScrollable) node else null
++        }
++        val node = walk(root) ?: return false
++        return node.performAction(action)
++    }
++
++    /** Replace, append or clear a field without relying on the keyboard layout. */
++    fun editText(text: String, elementIndex: Int?, mode: String): Boolean {
++        val current = if (mode == "append") focusedEditableText(elementIndex) else null
++        val replacement = when (mode) {
++            "clear" -> ""
++            "append" -> (current ?: return false) + text
++            else -> text
++        }
++        return typeText(replacement, elementIndex)
++    }
++
++    private fun focusedEditableText(elementIndex: Int?): String? {
++        val root = rootInActiveWindow ?: return null
++        val target = if (elementIndex == null) findFocusedEditable(root) else {
++            val element = describeScreen().elements.getOrNull(elementIndex) ?: return null
++            findEditableAt(root, element.centerX, element.centerY)
++        }
++        return target?.text?.toString() ?: ""
++    }
++
++    /** Prefer the native accessibility action: parents can be clickable when labels are not. */
++    fun clickElement(element: UiElement, longClick: Boolean = false): Boolean {
++        val root = rootInActiveWindow ?: return false
++        var node = nodeForElement(root, element) ?: return false
++        val action = if (longClick) AccessibilityNodeInfo.ACTION_LONG_CLICK
++            else AccessibilityNodeInfo.ACTION_CLICK
++        repeat(8) {
++            if (node.isEnabled && node.performAction(action)) return true
++            node = node.parent ?: return false
++        }
++        return false
++    }
++
++    private fun nodeForElement(node: AccessibilityNodeInfo?, element: UiElement): AccessibilityNodeInfo? {
++        if (node == null) return null
++        val bounds = Rect().also { node.getBoundsInScreen(it) }
++        if (bounds == element.bounds &&
++            node.className?.toString()?.substringAfterLast('.') == element.className &&
++            (element.resourceId.isEmpty() || node.viewIdResourceName == element.resourceId)) return node
++        for (i in 0 until node.childCount) {
++            nodeForElement(node.getChild(i), element)?.let { return it }
++        }
++        return null
++    }
++
++    /** Paste into the focused editable field without reading clipboard history. */
++    fun pasteFocused(): Boolean {
++        val root = rootInActiveWindow ?: return false
++        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
++        return focused.isEditable && focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+     }
+ 
+     /** كتابة نص في أول حقل قابل للتحرير مُركّز، أو في عنصر بفهرس محدد. */
+@@ -185,6 +400,7 @@
+     fun pressHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
+     fun openRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
+     fun openNotifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
++    fun openQuickSettings(): Boolean = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+ 
+     private suspend fun dispatch(gesture: GestureDescription): Boolean {
+         val result = CompletableDeferred<Boolean>()
+@@ -193,7 +409,7 @@
+             override fun onCancelled(d: GestureDescription?) { result.complete(false) }
+         }, null)
+         if (!ok) return false
+-        return result.await()
