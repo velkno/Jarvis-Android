@@ -6,7 +6,12 @@
 
 A user-controlled Android agent that can **see the current screen**, decide what to do, and interact with apps using Android Accessibility. Give it a task by text or voice, watch its steps, and stop at any time.
 
-**Android 8.0+** · **Kotlin + Jetpack Compose** · **OpenAI · Anthropic Claude · Google Gemini**
+[![Build Android APK](https://github.com/velkno/Jarvis-Android./actions/workflows/build-apk.yml/badge.svg)](https://github.com/velkno/Jarvis-Android./actions/workflows/build-apk.yml)
+![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Experimental-orange)
+
+**OpenAI · Anthropic Claude · Google Gemini**
 
 [Features](#features) · [Install](#install) · [Quick start](#quick-start) · [Build](#build-from-source) · [Arabic / العربية](#بالعربية) · [Contributing](CONTRIBUTING.md)
 
@@ -42,7 +47,7 @@ No root access is required for normal touch and navigation tools.
 ## Install
 
 1. Open the repository **[Actions](../../actions/workflows/build-apk.yml)** tab and select the latest **successful** “Build Jarvis APK” run.
-2. Download the **Jarvis-v1.4-Advanced-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. A public GitHub Release with a direct APK download is planned.
+2. Download the **Jarvis-v1.4-Advanced-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
 3. On Android, open the APK and allow installation from your trusted file manager when prompted.
 4. If Android blocks enabling Accessibility for a sideloaded app, check the system's restricted-settings prompt and decide whether to grant access. This permission lets the app observe and operate your screen.
 
@@ -86,7 +91,7 @@ app/src/main/res/      Android resources and accessibility config
 .github/workflows/     Android build automation
 ```
 
-For a detailed walkthrough, see [Development guide](docs/DEVELOPMENT.md) and [Changelog](CHANGELOG.md).
+For a detailed walkthrough, see [Development guide](docs/DEVELOPMENT.md), [Changelog](CHANGELOG.md), and the [experimental GitHub Release workflow](.github/workflows/release-experimental.yml).
 
 ## Contributing & feedback
 
