@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible issue without exposing secrets.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Please remove API keys, real screenshots, phone numbers and private data from any logs."
+  - type: input
+    id: version
+    attributes:
+      label: JARVIS version
+      placeholder: "1.4"
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version and device
+      placeholder: "Android 14, Pixel 7"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use a non-sensitive test example.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+    validations:
+      required: true

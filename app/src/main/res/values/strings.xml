@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">جارفيس</string>
+    <string name="accessibility_label">جارفيس — التحكم بالهاتف</string>
+    <string name="accessibility_desc">يسمح لجارفيس بقراءة الشاشة والنقر والكتابة والتمرير نيابة عنك لتنفيذ أوامرك. لا يعمل إلا عندما تعطيه أمراً.</string>
+</resources>

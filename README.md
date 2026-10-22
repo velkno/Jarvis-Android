@@ -1,19 +1,108 @@
-# JARVIS Android v1.4
+<div align="center">
 
-Agent-controlled Android app supporting OpenAI, Anthropic Claude and Google Gemini.
+# JARVIS for Android
 
-## Included
-- Vision/SC: on-demand screenshot interpretation on Android 11+ (opt-in).
-- Accessibility: screen reading, click by index/text, tap, double-tap, long-press, drag/drop, pinch, swipes, native scroll, text replace/append/clear.
-- Device tools: apps, web URLs, selected system settings, status, notifications, quick settings, clipboard write/paste, media and volume.
-- Blue pointer, glowing screen edges, floating chat bubble, stop button.
-- Root diagnostics: optional and restricted to read-only commands.
+**Your AI assistant, now with hands on the screen.**
 
-## Build
-The original source archive is `Jarvis-v1.2-build-ready-source.zip`. The updated source is applied from the ordered patches in `patches/advanced-v1.4.part01` through `part07`, then `patches/advanced-v1.4-nullability.patch`, by `.github/workflows/build-apk.yml`.
+A user-controlled Android agent that can **see the current screen**, decide what to do, and interact with apps using Android Accessibility. Give it a task by text or voice, watch its steps, and stop at any time.
 
-GitHub Actions builds `assembleDebug` and publishes `Jarvis-v1.4-Advanced-APK` as a download artifact. The debug APK is Android 8.0+.
+**Android 8.0+** · **Kotlin + Jetpack Compose** · **OpenAI · Anthropic Claude · Google Gemini**
 
-**Security:** Screenshots only on request when Vision/SC is enabled. Screen password fields are masked. Actions require a user-initiated task, and protected windows/security controls are not bypassed. Irreversible actions should be confirmed in chat; that rule is guidance, not an OS guarantee.
+[Features](#features) · [Install](#install) · [Quick start](#quick-start) · [Build](#build-from-source) · [Arabic / العربية](#بالعربية) · [Contributing](CONTRIBUTING.md)
 
-**Limitations:** CI compilation was verified; device-specific behavior still needs testing on a real handset. APK upgrades signed using different signing keys may require backup and reinstall.
+</div>
+
+> **Status: experimental.** The debug APK has been compiled successfully in GitHub Actions. It has **not been independently validated on physical devices**, and individual accessibility/vision features depend on Android version, permissions and the selected model. Please report bugs.
+
+## Why JARVIS?
+
+Most chatbots give instructions. JARVIS tries to **carry out** user-requested phone tasks itself:
+
+1. **Observe:** read the accessibility tree and, when explicitly enabled, capture a screenshot.
+2. **Reason:** send the task and relevant screen context to your chosen AI model.
+3. **Act:** click, type, scroll, navigate or open an app.
+4. **Verify:** inspect the new screen and continue until finished, stopped, or blocked.
+
+No root access is required for normal touch and navigation tools.
+
+## Features
+
+| Area | What is available |
+|---|---|
+| **Vision/SC** | On-demand screenshot understanding on Android **11+**, using an accessibility screenshot API. Opt-in; protected windows cannot be captured. |
+| **Accessibility control** | Read UI hierarchy, tap by position or element, double tap, long-press, drag, swipe, scroll and pinch. |
+| **Input & navigation** | Enter, replace or clear text; Home, Back, Recents, Notifications and Quick Settings. |
+| **App actions** | List/open installed apps, open URLs, navigate to selected settings screens. |
+| **AI providers** | Configure your own API key for OpenAI, Anthropic Claude or Google Gemini. Choose a compatible model. |
+| **Voice & display** | Speech input, spoken replies, an optional floating chat bubble, blue pointer and blue edge effects. |
+| **Control & safety** | Stop button, user-initiated sessions, masked password fields in accessibility data, optional restricted read-only root diagnostics. |
+
+**Limitations:** JARVIS does not bypass Android lock screens, protected app windows or security restrictions. Sensitive or irreversible actions should always be checked by the user; model confirmations are **not an OS-level enforcement guarantee**. Some devices/manufacturers block or throttle overlays and accessibility tools. The app is **not** an always-on screen broadcaster.
+
+## Install
+
+1. Open the repository **[Actions](../../actions/workflows/build-apk.yml)** tab and select the latest **successful** “Build Jarvis APK” run.
+2. Download the **Jarvis-v1.4-Advanced-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. A public GitHub Release with a direct APK download is planned.
+3. On Android, open the APK and allow installation from your trusted file manager when prompted.
+4. If Android blocks enabling Accessibility for a sideloaded app, check the system's restricted-settings prompt and decide whether to grant access. This permission lets the app observe and operate your screen.
+
+**Note on updates:** CI builds use debug signing. Different debug signing keys might prevent an APK from updating an older version. Back up your configuration before uninstalling; uninstalling may erase API settings.
+
+## Quick start
+
+1. Open JARVIS → **API / Keys**. Pick OpenAI, Anthropic or Gemini; paste **your own** key and select a model that supports tool calling and, for Vision, image input.
+2. In **Permissions**, enable the **JARVIS Accessibility service**.
+3. Optionally enable **Vision/SC** (Android 11+) for image understanding, the floating bubble, pointer and visual effects.
+4. Type or speak a task. Example: **“Open YouTube and search for easy Moroccan tajine recipes.”**
+5. Review the tool steps, and hit **Stop** to halt the task.
+
+**Privacy warning:** With Vision/SC enabled, screenshots and/or accessibility content can be sent to **the AI provider you select** for processing. This may include personal content shown on your screen. Disable Vision/SC on sensitive apps and avoid handling passwords, payments or private conversations until you have reviewed the behavior yourself. Provider API fees may apply. Read [Privacy & permissions](docs/PRIVACY.md).
+
+## Build from source
+
+You need Android Studio or JDK 17, Android SDK 34, and internet access for dependencies.
+
+```bash
+git clone https://github.com/velkno/Jarvis-Android..git
+cd Jarvis-Android.
+./gradlew assembleDebug
+```
+
+The unsigned-for-release **debug** APK will be at `app/build/outputs/apk/debug/app-debug.apk`. No production signing key is included.
+
+Use the **[Build Jarvis APK](.github/workflows/build-apk.yml)** workflow in GitHub Actions to build without installing Android Studio.
+
+## Project layout
+
+```text
+app/src/main/java/com/jarvis/agent/
+  ai/         OpenAI, Anthropic and Gemini integrations
+  agent/      Tool-calling agent loop and session
+  control/    Accessibility service, gestures, overlays, tools
+  data/       Encrypted API key storage
+  ui/         Jetpack Compose interface
+  voice/      Speech recognition and text-to-speech
+app/src/main/res/      Android resources and accessibility config
+.github/workflows/     Android build automation
+```
+
+For a detailed walkthrough, see [Development guide](docs/DEVELOPMENT.md) and [Changelog](CHANGELOG.md).
+
+## Contributing & feedback
+
+Bug reports, feature proposals, documentation, translations and pull requests are welcome. Check [Contributing](CONTRIBUTING.md) and use **Issues** for bug reports. Please do not post API keys, private screenshots or personal data in public issues. Report vulnerabilities privately using [Security policy](SECURITY.md).
+
+**Licensing:** This repository has not yet been assigned an open-source license. Public visibility does not by itself grant reuse or redistribution rights. The maintainer may add an explicit license after reviewing project assets and dependencies.
+
+## بالعربية
+
+**جارفيس** هو مساعد ذكي للأندرويد كيتحكم فالهاتف بتعليماتك: كيقرأ عناصر الشاشة، ويقدر يشوف لقطة شاشة عند تفعيل **Vision/SC**، ومن بعد ينقر ويكتب ويسكرول ويفتح التطبيقات. كيدعم **OpenAI وClaude وGemini** بمفتاح API ديالك، وفيه **فقاعة عائمة**، **مؤشر أزرق**، **مؤثرات مضيئة** وزر للإيقاف.
+
+- **أندرويد 8 فما فوق**؛ الرؤية بالصور كتحتاج **أندرويد 11 فما فوق**.
+- **الروت اختياري** وماشي ضروري للاستعمال العادي.
+- الصور ومعلومات الشاشة يمكن تمشي لمزود الذكاء الاصطناعي اللي اخترتيه؛ ما تفعّلش الرؤية فالتطبيقات الحساسة.
+- هادي نسخة **تجريبية**، والبناء نجح ولكن خاصها تجارب على هواتف حقيقية.
+
+---
+
+*JARVIS is an independent Android project. It is not affiliated with OpenAI, Anthropic or Google.*

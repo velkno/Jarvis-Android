@@ -1,0 +1,25 @@
+# Gradle and Android local build state
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+.cxx/
+.externalNativeBuild/
+
+# Signing material and credentials
+*.keystore
+*.jks
+*.p12
+*.pem
+.env
+.env.*
+!*.example
+
+# Local artifacts and logs
+*.apk
+*.aab
+*.log
+*.hprof
+.DS_Store
+Thumbs.db
