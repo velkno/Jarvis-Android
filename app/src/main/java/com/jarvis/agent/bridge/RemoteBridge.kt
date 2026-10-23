@@ -88,11 +88,13 @@ class BridgeStorage(context: Context) {
             .apply()
     }
 
-    fun pending(): RemoteCommand? = try {
-        val raw = prefs.getString("pending", null) ?: return null
-        val json = JSONObject(raw)
-        RemoteCommand(json.getInt("issue"), json.getString("task"), json.getString("sender"))
-    } catch (_: Exception) { null }
+    fun pending(): RemoteCommand? {
+        return try {
+            val raw = prefs.getString("pending", null) ?: return null
+            val json = JSONObject(raw)
+            RemoteCommand(json.getInt("issue"), json.getString("task"), json.getString("sender"))
+        } catch (_: Exception) { null }
+    }
 
     fun setPending(cmd: RemoteCommand?) {
         val edit = prefs.edit()
@@ -219,6 +221,7 @@ object RemoteBridge {
 
     fun refresh(ctx: Context) {
         stop()
+        _pending.value = BridgeStorage(ctx).pending()
         start(ctx)
     }
 
