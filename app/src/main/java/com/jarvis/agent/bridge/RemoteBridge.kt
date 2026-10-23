@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.jarvis.agent.agent.AgentSession
+import com.jarvis.agent.agent.FastIntentParser
 import com.jarvis.agent.data.KeyStore
 import com.jarvis.agent.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -130,10 +131,15 @@ class BridgeStorage(context: Context) {
 }
 
 private class GitHubBridgeApi(private val config: BridgeSettings) {
-    private val client = OkHttpClient.Builder()
-        .callTimeout(20, TimeUnit.SECONDS)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .build()
+    // Reuse the same HTTP connection pool across polling and result reports.
+    private val client = sharedClient
+
+    companion object {
+        private val sharedClient = OkHttpClient.Builder()
+            .callTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .build()
+    }
     private val base = "https://api.github.com/repos/${config.repository}"
 
     private fun request(path: String, body: JSONObject? = null): JSONObjectOrArray {
@@ -206,13 +212,25 @@ object RemoteBridge {
             return
         }
         _pending.value = storage.pending()
+        val config = storage.config() ?: return
         job = scope.launch {
+            val api = GitHubBridgeApi(config)
+            var verified = false
             while (isActive) {
-                try { poll(context) }
-                catch (e: Exception) {
-                    _status.value = "تعذر الاتصال: ${e.message?.take(100) ?: "خطأ"}"
+                var retryDelay = 8_000L
+                try {
+                    // Private-repo validation runs once for the active session,
+                    // instead of two API calls every poll.
+                    if (!verified) {
+                        api.verifyPrivateRepo()
+                        verified = true
+                    }
+                    poll(context, storage, api)
+                } catch (e: Exception) {
+                    _status.value = "تعذر الاتصال: " + (e.message?.take(100) ?: "خطأ")
+                    retryDelay = 60_000L // Back off on errors/rate limits.
                 }
-                delay(30_000L)
+                delay(retryDelay)
             }
         }
     }
@@ -248,12 +266,9 @@ object RemoteBridge {
         }
     }
 
-    private fun poll(ctx: Context) {
-        val storage = BridgeStorage(ctx)
+    private fun poll(ctx: Context, storage: BridgeStorage, api: GitHubBridgeApi) {
         if (!storage.enabled) return
         val config = storage.config() ?: return
-        val api = GitHubBridgeApi(config)
-        api.verifyPrivateRepo()
 
         if (storage.pending() != null) {
             _pending.value = storage.pending()
@@ -291,7 +306,7 @@ object RemoteBridge {
             notifyApproval(ctx)
             break
         }
-        if (_pending.value == null) _status.value = "✓ الرابط نشط: كيتحقق من الأوامر كل 30 ثانية"
+        if (_pending.value == null) _status.value = "✓ الرابط نشط: كيتحقق من الأوامر كل 8 ثوان"
     }
 
     private fun notifyApproval(ctx: Context) {
@@ -341,8 +356,9 @@ object RemoteBridge {
             return
         }
         if (!storage.enabled) { _status.value = "فعّل الربط أولاً"; return }
-        if (KeyStore(context).activeConfig() == null) {
-            _status.value = "خاص تضيف مفتاح AI أولاً"; return
+        if (KeyStore(context).activeConfig() == null &&
+            FastIntentParser.parse(cmd.task) == null) {
+            _status.value = "خاص تضيف مفتاح AI للمهام المعقدة أولاً"; return
         }
         if (AgentSession.busy.value) {
             _status.value = "جارفيس خدام فمهمة أخرى، وقفها أولاً"; return
