@@ -49,7 +49,7 @@ No root access is required for normal touch and navigation tools.
 ## Install
 
 1. Open the repository **[Actions](../../actions/workflows/build-apk.yml)** tab and select the latest **successful** “Build Jarvis APK” run.
-2. Download the **Jarvis-v1.4-Advanced-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
+2. Download the **Jarvis-v1.5-Chat-Handoff-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
 3. On Android, open the APK and allow installation from your trusted file manager when prompted.
 4. If Android blocks enabling Accessibility for a sideloaded app, check the system's restricted-settings prompt and decide whether to grant access. This permission lets the app observe and operate your screen.
 
