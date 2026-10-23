@@ -19,6 +19,10 @@ internal object ExternalTask {
                 if (intent.type != "text/plain") return null
                 intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
             }
+            Intent.ACTION_PROCESS_TEXT -> {
+                if (intent.type != "text/plain") return null
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            }
             Intent.ACTION_VIEW -> {
                 val uri = intent.data ?: return null
                 if (!uri.scheme.equals("jarvis", ignoreCase = true) ||
