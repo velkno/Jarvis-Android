@@ -3,6 +3,7 @@ package com.jarvis.agent.ui
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -706,7 +707,7 @@ private fun BridgeScreen() {
         Text(
             "الصيغة المطلوبة فـ GitHub Issue:\n" +
                 "العنوان: [jarvis-remote-v1]\n" +
-                """{"protocol":"jarvis-remote-v1","device_id":"${storage.deviceId}","task":"افتح واتساب","expires_at":"2026-10-23T21:30:00Z"}""",
+                """{"protocol":"jarvis-remote-v1","device_id":"${storage.deviceId}","task":"افتح واتساب","expires_at":"2026-10-23T21:30:00Z (مثال، غيّرو للوقت الحالي)"}""",
             fontSize = 12.sp, fontFamily = FontFamily.Monospace
         )
         Text(
