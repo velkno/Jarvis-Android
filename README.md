@@ -41,6 +41,7 @@ No root access is required for normal touch and navigation tools.
 | **App actions** | List/open installed apps, open URLs, navigate to selected settings screens. |
 | **AI providers** | Configure your own API key for OpenAI, Anthropic Claude or Google Gemini. Choose a compatible model. |
 | **Voice & display** | Speech input, spoken replies, an optional floating chat bubble, blue pointer and blue edge effects. |
+| **ChatGPT hand-off (v1.5)** | Share or select text in another app and explicitly approve the command in JARVIS. [Setup & security](docs/CHATGPT_HANDOFF.md). This does **not** provide silent phone control from a ChatGPT conversation. |
 | **Control & safety** | Stop button, user-initiated sessions, masked password fields in accessibility data, optional restricted read-only root diagnostics. |
 
 **Limitations:** JARVIS does not bypass Android lock screens, protected app windows or security restrictions. Sensitive or irreversible actions should always be checked by the user; model confirmations are **not an OS-level enforcement guarantee**. Some devices/manufacturers block or throttle overlays and accessibility tools. The app is **not** an always-on screen broadcaster.
@@ -48,11 +49,15 @@ No root access is required for normal touch and navigation tools.
 ## Install
 
 1. Open the repository **[Actions](../../actions/workflows/build-apk.yml)** tab and select the latest **successful** “Build Jarvis APK” run.
-2. Download the **Jarvis-v1.4-Advanced-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
+2. Download the **Jarvis-v1.5-Chat-Handoff-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
 3. On Android, open the APK and allow installation from your trusted file manager when prompted.
 4. If Android blocks enabling Accessibility for a sideloaded app, check the system's restricted-settings prompt and decide whether to grant access. This permission lets the app observe and operate your screen.
 
 **Note on updates:** CI builds use debug signing. Different debug signing keys might prevent an APK from updating an older version. Back up your configuration before uninstalling; uninstalling may erase API settings.
+
+## Send commands from ChatGPT (v1.5)
+
+After configuring the API key and Accessibility service, select the command text in ChatGPT and use Android's **Share** or **selected text** action to send it to JARVIS (availability depends on the ChatGPT app). JARVIS displays a confirmation dialog before running anything. See [ChatGPT hand-off instructions](docs/CHATGPT_HANDOFF.md). **This is user-approved hand-off, not autonomous remote control.**
 
 ## Quick start
 
