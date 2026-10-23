@@ -1,6 +1,7 @@
 package com.jarvis.agent.agent
 
 import android.content.Context
+import android.os.SystemClock
 import com.jarvis.agent.ai.HttpClientFactory
 import com.jarvis.agent.ai.LlmProvider
 import com.jarvis.agent.control.DeviceTools
@@ -49,45 +50,78 @@ object AgentSession {
         context: Context, text: String,
         onFinish: ((success: Boolean, summary: String) -> Unit)? = null
     ) {
-        if (text.isBlank() || _busy.value) {
+        val goal = text.trim()
+        if (goal.isBlank() || _busy.value) {
             onFinish?.invoke(false, "Agent busy or task empty")
             return
         }
-        if (tools == null) tools = DeviceTools(context.applicationContext)
-        val cfg = KeyStore(context.applicationContext).activeConfig()
-        if (cfg == null) {
-            append(LogLine.Kind.ERROR, "أضف مفتاح API واختر مزوّداً من الإعدادات أولاً.")
+        val appContext = context.applicationContext
+        val fastIntent = FastIntentParser.parse(goal)
+        val cfg = KeyStore(appContext).activeConfig()
+        if (cfg == null && fastIntent == null) {
+            append(LogLine.Kind.ERROR, "أضف مفتاح API لتنفيذ المهام الذكية.")
             onFinish?.invoke(false, "AI API key not configured")
             return
         }
-        // أعد بناء الحلقة إن تغيّر المزوّد/النموذج/المفتاح
-        val key = "${cfg.provider}|${cfg.model}|${cfg.apiKey.hashCode()}"
-        if (loop == null || loopKey != key) {
-            loop = AgentLoop(LlmProvider.create(cfg, http), tools!!)
-            loopKey = key
-        }
-        append(LogLine.Kind.USER, text)
+
+        append(LogLine.Kind.USER, goal)
         _busy.value = true
         val requestId = generation.incrementAndGet()
-        val activeLoop = loop!!
 
         job = scope.launch {
+            val started = SystemClock.elapsedRealtime()
+            var localFast = false
+            var toolCount = 0
             try {
-                activeLoop.run(text) { ev ->
+                if (fastIntent != null) {
+                    val result = FastActionExecutor.execute(appContext, fastIntent)
+                    if (result != null) {
+                        if (generation.get() != requestId) return@launch
+                        localFast = true
+                        append(
+                            if (result.success) LogLine.Kind.AGENT else LogLine.Kind.ERROR,
+                            result.message
+                        )
+                        onFinish?.invoke(result.success, result.message)
+                        if (result.success) withContext(Dispatchers.Main) {
+                            if (generation.get() == requestId) onFinalReply?.invoke(result.message)
+                        }
+                        return@launch
+                    }
+                }
+
+                // Unrecognized local command: use a full reasoning model.
+                if (cfg == null) {
+                    append(LogLine.Kind.ERROR, "ما لقيتش التطبيق. أضف API Key باش نبحث عليه بالذكاء الاصطناعي.")
+                    onFinish?.invoke(false, "No matching installed app and AI API key not configured")
+                    return@launch
+                }
+                if (tools == null) tools = DeviceTools(appContext)
+                val key = cfg.provider.name + "|" + cfg.model + "|" + cfg.apiKey.hashCode()
+                if (loop == null || loopKey != key) {
+                    loop = AgentLoop(LlmProvider.create(cfg, http), tools!!)
+                    loopKey = key
+                }
+                val currentLoop = loop!!
+
+                currentLoop.run(goal) { ev ->
                     if (generation.get() != requestId) throw CancellationException("Task stopped")
                     when (ev) {
                         is AgentLoop.Event.Thinking -> append(LogLine.Kind.AGENT, ev.text)
-                        is AgentLoop.Event.Action -> append(
-                            LogLine.Kind.ACTION,
-                            if (ev.tool == "type_text" || ev.tool == "clipboard_write")
-                                "${ev.tool} [نص مخفي لحماية الخصوصية]"
-                            else "${ev.tool} ${ev.args.take(180)}"
-                        )
+                        is AgentLoop.Event.Action -> {
+                            toolCount++
+                            append(
+                                LogLine.Kind.ACTION,
+                                if (ev.tool == "type_text" || ev.tool == "clipboard_write")
+                                    ev.tool + " [نص مخفي لحماية الخصوصية]"
+                                else ev.tool + " " + ev.args.take(180)
+                            )
+                        }
                         is AgentLoop.Event.Observation -> append(
                             LogLine.Kind.OBSERVATION, ev.result.take(400)
                         )
                         is AgentLoop.Event.Done -> {
-                            append(LogLine.Kind.AGENT, "✓ ${ev.summary}")
+                            append(LogLine.Kind.AGENT, "✓ " + ev.summary)
                             onFinish?.invoke(true, ev.summary)
                             withContext(Dispatchers.Main) {
                                 if (generation.get() == requestId) onFinalReply?.invoke(ev.summary)
@@ -108,8 +142,16 @@ object AgentSession {
                     onFinish?.invoke(false, e.message ?: "Unexpected failure")
                 }
             } finally {
-                // An older cancelled task must never mark a newer task as idle.
-                if (generation.get() == requestId) _busy.value = false
+                if (generation.get() == requestId) {
+                    val ms = SystemClock.elapsedRealtime() - started
+                    append(
+                        LogLine.Kind.OBSERVATION,
+                        "⏱ " + ms + " ms | " +
+                            (if (localFast) "Fast Engine: no AI request"
+                             else "Reasoning Engine: " + toolCount + " tool calls")
+                    )
+                    _busy.value = false
+                }
             }
         }
     }

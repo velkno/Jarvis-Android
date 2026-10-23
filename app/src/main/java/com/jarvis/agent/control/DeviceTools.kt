@@ -29,8 +29,10 @@ class DeviceTools(private val context: android.content.Context) {
     fun specs(): List<ToolSpec> = listOf(
         ToolSpec(
             name = "read_screen",
-            description = "اقرأ الشاشة الحية: نصوص العناصر وفهارسها، وصورة شاشة فعلية (Vision/SC) إن كانت مفعّلة في الإعدادات وعلى Android 11+. اطلبها قبل كل تفاعل مهم وبعده.",
-            parameters = emptyMap()
+            description = "اقرأ الشاشة الحية. استخدم include_image=false للشاشات النصية الواضحة لتقليل التأخير، وtrue عند وجود أيقونات أو صور غير مفهومة. إذا لم تمرر المعامل فسيُتبع إعداد Vision/SC.",
+            parameters = mapOf(
+                "include_image" to ParamSpec("boolean", "التقاط صورة اختيارياً عند الحاجة، إذا سمح المستخدم بـ Vision/SC")
+            )
         ),
         ToolSpec(
             name = "tap",
@@ -244,8 +246,11 @@ class DeviceTools(private val context: android.content.Context) {
                 val snap = acc?.describeScreen()
                     ?: return ToolOutcome.text("خدمة الوصول غير مفعّلة. فعّلها من الإعدادات.")
                 lastSnapshot = snap
+                val imageRequested = args["include_image"]?.jsonPrimitive?.booleanOrNull ?: true
                 if (!OverlaySettings.visionEnabled(context)) {
                     ToolOutcome.text(snap.toPrompt() + "\nVision/SC: غير مفعّل من الإعدادات.")
+                } else if (!imageRequested) {
+                    ToolOutcome.text(snap.toPrompt() + "\nVision: تم استخدام العناصر النصية فقط لتوفير الوقت.")
                 } else if (android.os.Build.VERSION.SDK_INT < 30) {
                     ToolOutcome.text(snap.toPrompt() + "\nVision/SC يتطلب Android 11 أو أحدث، استخدم العناصر النصية.")
                 } else {

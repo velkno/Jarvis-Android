@@ -77,16 +77,16 @@ data class ProviderConfig(
     companion object {
         /** نماذج افتراضية مقترحة لكل مزوّد. */
         fun defaultModel(p: Provider): String = when (p) {
-            Provider.OPENAI -> "gpt-4o"
+            Provider.OPENAI -> "gpt-6.1-sol"
             Provider.ANTHROPIC -> "claude-sonnet-4-5"
             Provider.GEMINI -> "gemini-4-argon"
         }
 
         /** نماذج مقترحة تظهر كأزرار سريعة في شاشة المفاتيح. */
         fun suggestedModels(p: Provider): List<String> = when (p) {
-            Provider.OPENAI -> listOf("gpt-4o", "gpt-4.1", "gpt-4o-mini")
+            Provider.OPENAI -> listOf("gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna", "gpt-4o")
             Provider.ANTHROPIC -> listOf("claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5")
-            Provider.GEMINI -> listOf("gemini-4-argon", "gemini-2.5-pro", "gemini-2.5-flash")
+            Provider.GEMINI -> listOf("gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite")
         }
     }
 }
