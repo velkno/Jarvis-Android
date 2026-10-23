@@ -49,11 +49,15 @@ No root access is required for normal touch and navigation tools.
 ## Install
 
 1. Open the repository **[Actions](../../actions/workflows/build-apk.yml)** tab and select the latest **successful** “Build Jarvis APK” run.
-2. Download the **Jarvis-v1.5-Chat-Handoff-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
+2. Download the **Jarvis-v1.6-Private-Bridge-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
 3. On Android, open the APK and allow installation from your trusted file manager when prompted.
 4. If Android blocks enabling Accessibility for a sideloaded app, check the system's restricted-settings prompt and decide whether to grant access. This permission lets the app observe and operate your screen.
 
 **Note on updates:** CI builds use debug signing. Different debug signing keys might prevent an APK from updating an older version. Back up your configuration before uninstalling; uninstalling may erase API settings.
+
+## Receive private remote requests from ChatGPT (v1.6)
+
+New: opt-in remote commands through **GitHub Issues in a private repository**. GitHub-integrated ChatGPT sessions can create a time-limited request for this phone. The phone checks for it, notifies you, and **requires your on-device approval** before doing anything. It then uses JARVIS's existing phone-control tools. No silent control, no public command queue, and no raw screenshot upload to GitHub. See **[Private remote bridge: full setup](docs/PRIVATE_REMOTE_BRIDGE.md)**.
 
 ## Send commands from ChatGPT (v1.5)
 
