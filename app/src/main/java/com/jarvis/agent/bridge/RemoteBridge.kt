@@ -43,7 +43,9 @@ import java.util.concurrent.TimeUnit
  *
  * No screen content, screenshots or secret values are sent to GitHub.
  */
-data class RemoteCommand(val issue: Int, val task: String, val sender: String)
+data class RemoteCommand(
+    val issue: Int, val task: String, val sender: String, val expiresAt: Long
+)
 
 data class BridgeSettings(val repository: String, val trustedSender: String, val token: String)
 
@@ -92,7 +94,10 @@ class BridgeStorage(context: Context) {
         return try {
             val raw = prefs.getString("pending", null) ?: return null
             val json = JSONObject(raw)
-            RemoteCommand(json.getInt("issue"), json.getString("task"), json.getString("sender"))
+            RemoteCommand(
+                json.getInt("issue"), json.getString("task"),
+                json.getString("sender"), json.getLong("expires_at")
+            )
         } catch (_: Exception) { null }
     }
 
@@ -100,7 +105,8 @@ class BridgeStorage(context: Context) {
         val edit = prefs.edit()
         if (cmd == null) edit.remove("pending")
         else edit.putString("pending", JSONObject()
-            .put("issue", cmd.issue).put("task", cmd.task).put("sender", cmd.sender).toString())
+            .put("issue", cmd.issue).put("task", cmd.task)
+            .put("sender", cmd.sender).put("expires_at", cmd.expiresAt).toString())
         edit.commit()
     }
 
@@ -276,7 +282,7 @@ object RemoteBridge {
                 val task = json.optString("task").trim()
                 if (task.isBlank() || task.length > 500) continue
                 if (task.any { it.code < 32 && it != '\n' && it != '\t' }) continue
-                RemoteCommand(number, task, author)
+                RemoteCommand(number, task, author, expires)
             } catch (_: Exception) { continue }
 
             storage.setPending(command) // persist before notification
@@ -329,6 +335,11 @@ object RemoteBridge {
         val context = ctx.applicationContext
         val storage = BridgeStorage(context)
         val cmd = storage.pending() ?: return
+        if (System.currentTimeMillis() > cmd.expiresAt) {
+            reject(context)
+            _status.value = "انتهت صلاحية الأمر #${cmd.issue}"
+            return
+        }
         if (!storage.enabled) { _status.value = "فعّل الربط أولاً"; return }
         if (KeyStore(context).activeConfig() == null) {
             _status.value = "خاص تضيف مفتاح AI أولاً"; return
