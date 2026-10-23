@@ -161,9 +161,8 @@ private class GitHubBridgeApi(private val config: BridgeSettings) {
 
     fun report(issue: Int, status: String, summary: String) {
         // Always private. Never upload accessibility dumps or screenshots here.
-        val safe = summary.take(350).replace(Regex("[\\r\\n]+"), " ")
         val body = JSONObject().put(
-            "body", "JARVIS_REMOTE_RESULT_V1\nstatus: $status\nresult: $safe"
+            "body", "JARVIS_REMOTE_RESULT_V1\nstatus: $status\nresult: review the local Jarvis app log"
         )
         request("/issues/$issue/comments", body)
     }
