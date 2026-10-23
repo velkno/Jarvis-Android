@@ -17,7 +17,8 @@ interface LlmProvider {
     companion object {
         fun create(config: ProviderConfig, http: HttpClientFactory): LlmProvider =
             when (config.provider) {
-                Provider.OPENAI -> OpenAiProvider(config, http)
+                Provider.OPENAI -> if (config.model.startsWith("gpt-6")) OpenAiResponsesProvider(config, http)
+                    else OpenAiProvider(config, http)
                 Provider.ANTHROPIC -> AnthropicProvider(config, http)
                 Provider.GEMINI -> GeminiProvider(config, http)
             }
