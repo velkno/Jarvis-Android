@@ -34,7 +34,7 @@ And a JSON body like the following (replace the device ID and expiry):
 }
 ```
 
-**Important:** `expires_at` must be a fresh **UTC** time after now, no more than 15 minutes after the issue's creation. Use current UTC rather than copying the example timestamp. The issue's author must match the trusted username configured on JARVIS. The app polls every 30 seconds while its Accessibility service is alive, subject to Android power management and internet access. The first valid request is shown for review, with a high-priority local notification when allowed.
+**Important:** `expires_at` must be a fresh **UTC** time after now, no more than 15 minutes after the issue's creation. Use current UTC rather than copying the example timestamp. The issue's author must match the trusted username configured on JARVIS. The app polls every 8 seconds while its Accessibility service is alive, subject to Android power management and internet access. The first valid request is shown for review, with a high-priority local notification when allowed.
 
 Tap **موافقة وتشغيل** in JARVIS. To decline tap **رفض**. Once approved, the task runs through the existing AgentSession and controls. The app posts a **status-only** comment, `JARVIS_REMOTE_RESULT_V1`, on the corresponding private issue after completion or failure, if the token permits Issue comments. Detailed local execution logs stay on the device.
 
