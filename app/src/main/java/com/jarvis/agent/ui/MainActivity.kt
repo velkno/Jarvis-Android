@@ -53,10 +53,22 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private lateinit var voice: Voice
+    private val externalTask = mutableStateOf<String?>(null)
+
+    private fun readExternalTask(received: Intent?) {
+        externalTask.value = ExternalTask.from(received)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readExternalTask(intent)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         voice = Voice(this)
+        readExternalTask(intent)
         setContent {
             val dark = darkColorScheme(
                 primary = Color(0xFF8B5CF6),
@@ -67,7 +79,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = dark) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        App(voice)
+                        App(voice, externalTask.value) { externalTask.value = null }
                     }
                 }
             }
@@ -95,11 +107,40 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App(voice: Voice) {
+private fun App(voice: Voice, externalTask: String?, onExternalTaskHandled: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
     val ctx = LocalContext.current
+    val busy by AgentSession.busy.collectAsState()
     // ابدأ بالإعدادات إن لم يكن هناك مفتاح
     LaunchedEffect(Unit) { if (KeyStore(ctx).activeConfig() == null) tab = 1 }
+
+    // A share/deep-link request comes from another app or a website.
+    // It MUST be approved explicitly before controlling this device.
+    if (externalTask != null) {
+        AlertDialog(
+            onDismissRequest = onExternalTaskHandled,
+            title = { Text("أمر وارد من تطبيق خارجي") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("هل تريد تشغيل هذا الأمر على هاتفك باستعمال جارفيس؟")
+                    Text(externalTask, fontWeight = FontWeight.Bold)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onExternalTaskHandled()
+                        tab = 0
+                        AgentSession.send(ctx, externalTask)
+                    },
+                    enabled = !busy
+                ) { Text("تشغيل الأمر") }
+            },
+            dismissButton = {
+                TextButton(onClick = onExternalTaskHandled) { Text("إلغاء") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
