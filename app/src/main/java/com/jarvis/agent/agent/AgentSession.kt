@@ -45,12 +45,19 @@ object AgentSession {
     }
 
     /** يرسل أمراً للوكيل. */
-    fun send(context: Context, text: String) {
-        if (text.isBlank() || _busy.value) return
+    fun send(
+        context: Context, text: String,
+        onFinish: ((success: Boolean, summary: String) -> Unit)? = null
+    ) {
+        if (text.isBlank() || _busy.value) {
+            onFinish?.invoke(false, "Agent busy or task empty")
+            return
+        }
         if (tools == null) tools = DeviceTools(context.applicationContext)
         val cfg = KeyStore(context.applicationContext).activeConfig()
         if (cfg == null) {
             append(LogLine.Kind.ERROR, "أضف مفتاح API واختر مزوّداً من الإعدادات أولاً.")
+            onFinish?.invoke(false, "AI API key not configured")
             return
         }
         // أعد بناء الحلقة إن تغيّر المزوّد/النموذج/المفتاح
@@ -81,17 +88,25 @@ object AgentSession {
                         )
                         is AgentLoop.Event.Done -> {
                             append(LogLine.Kind.AGENT, "✓ ${ev.summary}")
+                            onFinish?.invoke(true, ev.summary)
                             withContext(Dispatchers.Main) {
                                 if (generation.get() == requestId) onFinalReply?.invoke(ev.summary)
                             }
                         }
-                        is AgentLoop.Event.Failed -> append(LogLine.Kind.ERROR, ev.error)
+                        is AgentLoop.Event.Failed -> {
+                            append(LogLine.Kind.ERROR, ev.error)
+                            onFinish?.invoke(false, ev.error)
+                        }
                     }
                 }
             } catch (e: CancellationException) {
+                onFinish?.invoke(false, "Task stopped")
                 throw e
             } catch (e: Exception) {
-                if (generation.get() == requestId) append(LogLine.Kind.ERROR, e.message ?: "فشل غير متوقع")
+                if (generation.get() == requestId) {
+                    append(LogLine.Kind.ERROR, e.message ?: "فشل غير متوقع")
+                    onFinish?.invoke(false, e.message ?: "Unexpected failure")
+                }
             } finally {
                 // An older cancelled task must never mark a newer task as idle.
                 if (generation.get() == requestId) _busy.value = false

@@ -3,6 +3,7 @@ package com.jarvis.agent.ui
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jarvis.agent.bridge.RemoteBridge
+import com.jarvis.agent.bridge.BridgeStorage
 import com.jarvis.agent.agent.AgentSession
 import com.jarvis.agent.agent.LogLine
 import com.jarvis.agent.ai.Provider
@@ -68,6 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         voice = Voice(this)
+        RemoteBridge.restore(applicationContext)
         readExternalTask(intent)
         setContent {
             val dark = darkColorScheme(
@@ -111,6 +115,7 @@ private fun App(voice: Voice, externalTask: String?, onExternalTaskHandled: () -
     var tab by remember { mutableIntStateOf(0) }
     val ctx = LocalContext.current
     val busy by AgentSession.busy.collectAsState()
+    val remotePending by RemoteBridge.pending.collectAsState()
     // ابدأ بالإعدادات إن لم يكن هناك مفتاح
     LaunchedEffect(Unit) { if (KeyStore(ctx).activeConfig() == null) tab = 1 }
 
@@ -142,6 +147,32 @@ private fun App(voice: Voice, externalTask: String?, onExternalTaskHandled: () -
         )
     }
 
+    if (remotePending != null) {
+        val command = remotePending!!
+        AlertDialog(
+            onDismissRequest = { /* Keep visible until accepted or rejected. */ },
+            title = { Text("طلب تحكم عن بُعد · GitHub #${command.issue}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("طلب من: ${command.sender}. راجع الأمر قبل أي تحكم في الهاتف.")
+                    Text(command.task, fontWeight = FontWeight.Bold)
+                    Text(
+                        "قد يقرأ الذكاء الاصطناعي الشاشة أثناء التنفيذ. لا توافق على أوامر غير معروفة.",
+                        color = Color(0xFFF59E0B), fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { RemoteBridge.approve(ctx); tab = 0 }, enabled = !busy) {
+                    Text("موافقة وتشغيل")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { RemoteBridge.reject(ctx) }) { Text("رفض") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(title = { Text("جارفيس", fontWeight = FontWeight.Bold) })
@@ -151,6 +182,7 @@ private fun App(voice: Voice, externalTask: String?, onExternalTaskHandled: () -
                 NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Default.Chat, null) }, label = { Text("الدردشة") })
                 NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Default.Key, null) }, label = { Text("المفاتيح") })
                 NavigationBarItem(tab == 2, { tab = 2 }, { Icon(Icons.Default.Security, null) }, label = { Text("الصلاحيات") })
+                NavigationBarItem(tab == 3, { tab = 3 }, { Icon(Icons.Default.Link, null) }, label = { Text("الربط") })
             }
         }
     ) { pad ->
@@ -158,7 +190,8 @@ private fun App(voice: Voice, externalTask: String?, onExternalTaskHandled: () -
             when (tab) {
                 0 -> ChatScreen(voice)
                 1 -> KeysScreen()
-                else -> PermissionsScreen()
+                2 -> PermissionsScreen()
+                else -> BridgeScreen()
             }
         }
     }
@@ -568,5 +601,119 @@ private fun PermRow(
             }
             if (!ok) TextButton(onClick = onClick) { Text(buttonText) }
         }
+    }
+}
+
+
+// ===================== PRIVATE GITHUB REMOTE BRIDGE =====================
+
+@Composable
+private fun BridgeScreen() {
+    val ctx = LocalContext.current
+    val storage = remember { BridgeStorage(ctx) }
+    val initial = remember { storage.config() }
+    var repository by remember { mutableStateOf(initial?.repository.orEmpty()) }
+    var sender by remember { mutableStateOf(initial?.trustedSender.orEmpty()) }
+    var token by remember { mutableStateOf("") }
+    var enabled by remember { mutableStateOf(storage.enabled) }
+    var verifying by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    val status by RemoteBridge.status.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { accepted ->
+        message = if (accepted) "✓ الإشعارات مفعلة" else
+            "يمكن تستقبل الأوامر، لكن خاص تفتح جارفيس باش تشوف الموافقة."
+    }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("الربط الخاص مع ChatGPT", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "كتقدر تبعث الأوامر عبر GitHub Issues فمستودع خاص. الهاتف كيتأكد كل 30 ثانية " +
+                "طالما خدمة الوصول شغالة. كل أمر كيحتاج موافقتك هنا، وممنوع التشغيل الصامت.",
+            fontSize = 13.sp
+        )
+        Text("Device ID: ${storage.deviceId}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        OutlinedTextField(
+            value = repository, onValueChange = { repository = it; enabled = false },
+            label = { Text("المستودع الخاص owner/repo") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = sender, onValueChange = { sender = it; enabled = false },
+            label = { Text("GitHub username المسموح له بالأوامر") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = token, onValueChange = { token = it },
+            label = { Text(if (initial == null) "Fine-grained PAT" else "PAT جديد (فارغ = احتفظ بالقديم)") },
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            visualTransformation = PasswordVisualTransformation()
+        )
+        Text(
+            "Token ديال Fine-grained PAT خاصو غير صلاحية Issues: Read/Write على " +
+                "مستودع خاص مخصص للأوامر. ما ترسلش Token فالمحادثة أو للمشروع العام.",
+            fontSize = 12.sp, color = Color(0xFFF59E0B)
+        )
+        Button(
+            enabled = !verifying,
+            onClick = {
+                val targetToken = token.trim().ifBlank { storage.config()?.token.orEmpty() }
+                verifying = true
+                scope.launch {
+                    message = RemoteBridge.verify(repository.trim(), sender.trim(), targetToken)
+                    if (message.startsWith("✓")) {
+                        try {
+                            storage.save(repository.trim(), sender.trim(), targetToken)
+                            enabled = false
+                            RemoteBridge.refresh(ctx)
+                            token = ""
+                            message += " · تم حفظ الإعدادات، فعّل الربط من الأسفل."
+                        } catch (e: Exception) {
+                            message = "✗ ${e.message}"
+                        }
+                    }
+                    verifying = false
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (verifying) "التحقق من Private repo…" else "اختبار وحفظ الاتصال") }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("تفعيل استقبال الأوامر", Modifier.weight(1f))
+            Switch(checked = enabled, onCheckedChange = { checked ->
+                if (checked && storage.config() == null) {
+                    message = "خاص التحقق والحفظ أولاً"
+                } else {
+                    storage.setEnabled(checked)
+                    enabled = checked
+                    RemoteBridge.refresh(ctx)
+                }
+            })
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            OutlinedButton(onClick = {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }) { Text("تفعيل إشعارات الأوامر الجديدة") }
+        }
+        Text("الحالة: $status", color = Color(0xFF93C5FD), fontSize = 13.sp)
+        if (message.isNotBlank()) Text(message, fontSize = 13.sp)
+        HorizontalDivider()
+        Text(
+            "الصيغة المطلوبة فـ GitHub Issue:\n" +
+                "العنوان: [jarvis-remote-v1]\n" +
+                """{"protocol":"jarvis-remote-v1","device_id":"${storage.deviceId}","task":"افتح واتساب","expires_at":"2026-10-23T21:30:00Z (مثال، غيّرو للوقت الحالي)"}""",
+            fontSize = 12.sp, fontFamily = FontFamily.Monospace
+        )
+        Text(
+            "تاريخ expires_at مجرد مثال. الأمر خاصو يكون صالح لأقل من 15 دقيقة من وقت إنشائه. " +
+                "النتائج النصية كتتبعت للمستودع الخاص، الصور والأسرار لا.",
+            color = Color.Gray, fontSize = 12.sp
+        )
     }
 }

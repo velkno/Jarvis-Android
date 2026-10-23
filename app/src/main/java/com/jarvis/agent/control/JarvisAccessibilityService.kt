@@ -1,5 +1,6 @@
 package com.jarvis.agent.control
 
+import com.jarvis.agent.bridge.RemoteBridge
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
@@ -42,9 +43,11 @@ class JarvisAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         overlay = AgentOverlay(this)
+        RemoteBridge.start(applicationContext)
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        RemoteBridge.stop()
         overlay?.dispose()
         overlay = null
         instance = null
@@ -52,6 +55,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        RemoteBridge.stop()
         overlay?.dispose()
         overlay = null
         instance = null
