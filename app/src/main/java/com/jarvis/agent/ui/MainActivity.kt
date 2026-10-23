@@ -707,7 +707,7 @@ private fun BridgeScreen() {
         Text(
             "الصيغة المطلوبة فـ GitHub Issue:\n" +
                 "العنوان: [jarvis-remote-v1]\n" +
-                """{"protocol":"jarvis-remote-v1","device_id":"${storage.deviceId}","task":"افتح واتساب","expires_at":"2026-10-23T21:30:00Z (مثال، غيّرو للوقت الحالي)"}""",
+                """{"protocol":"jarvis-remote-v1","device_id":"${storage.deviceId}","task":"افتح واتساب","expires_at":"<UTC_ISO_10_MIN_FROM_NOW>"}""",
             fontSize = 12.sp, fontFamily = FontFamily.Monospace
         )
         Text(
