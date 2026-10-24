@@ -44,11 +44,11 @@ class GeminiProvider(
             .post(body.toString().toRequestBody(mediaType))
             .build()
 
-        http.client.newCall(request).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
+        val resp = http.execute(request)
+        val text = resp.body
             if (!resp.isSuccessful) error(GeminiErrors.explain(resp.code, text, cfg.model))
             parseResponse(json.parseToJsonElement(text).jsonObject)
-        }
+
     }
 
     /** Gemini: كل functionResponse لدورة واحدة تُجمع في محتوى user واحد. */
