@@ -49,11 +49,25 @@ No root access is required for normal touch and navigation tools.
 ## Install
 
 1. Open the repository **[Actions](../../actions/workflows/build-apk.yml)** tab and select the latest **successful** “Build Jarvis APK” run.
-2. Download the **Jarvis-v1.7-Hybrid-Speed-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
+2. Download the **Jarvis-v1.8-Turbo-APK** artifact and extract `app-debug.apk`. Artifacts may require a GitHub sign-in. The maintainer can publish an explicitly labelled debug [prerelease](../../actions/workflows/release-experimental.yml) with a direct APK asset and SHA-256 checksum after review; inspect [Releases](../../releases) when available.
 3. On Android, open the APK and allow installation from your trusted file manager when prompted.
 4. If Android blocks enabling Accessibility for a sideloaded app, check the system's restricted-settings prompt and decide whether to grant access. This permission lets the app observe and operate your screen.
 
 **Note on updates:** CI builds use debug signing. Different debug signing keys might prevent an APK from updating an older version. Back up your configuration before uninstalling; uninstalling may erase API settings.
+
+## JARVIS v1.8: Turbo responsiveness
+
+Version 1.8 keeps the v1.7 local/hybrid command engine and improves responsiveness:
+
+- **No extra AI round trip for an initial UI scan:** for user-requested screen tasks, capture the current Accessibility tree locally and include a bounded snapshot in the first model request. No automatic screenshot is taken.
+- **Stop really cancels in-flight LLM network requests:** providers use cancellable OkHttp async calls instead of blocking network calls.
+- **No blind 1.2-second app-launch sleep:** inspect the UI after transitions instead.
+- **Faster target detection:** `wait_for` rechecks the Accessibility tree about every 120 ms rather than every 350 ms.
+- **Connection reuse:** shared HTTP/2-capable client and pooled TLS connections.
+- **Smaller Vision uploads:** on-demand JPEG screenshots are reduced to a maximum edge of 1600 px at 72% compression quality, while the Accessibility text remains available.
+- **Cached application lookups:** Android app enumeration is reused for up to 30 seconds; expensive enumerations are no longer run on the main thread by the local fast route.
+
+The app remains experimental. No specific latency has been guaranteed or independently benchmarked on physical devices. Local single-action tasks can avoid the cloud; multi-step AI tasks still depend on network and model latency. The private-repository GitHub bridge is separate and still uses polling plus explicit on-device approval.
 
 ## JARVIS v1.7: Hybrid speed + latest AI models
 
