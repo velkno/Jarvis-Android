@@ -216,6 +216,21 @@ class DeviceTools(private val context: android.content.Context) {
         )
     ).filter { it.name != "run_shell" || OverlaySettings.rootDiagnosticsEnabled(context) }
 
+    /**
+     * Lightweight on-device Accessibility observation for the beginning of a
+     * user-requested UI task. It captures no screenshot and makes no API call.
+     * The same snapshot backs element indices returned to the model.
+     */
+    fun initialObservation(): String? {
+        val service = JarvisAccessibilityService.instance ?: return null
+        return runCatching {
+            val snapshot = service.describeScreen()
+            lastSnapshot = snapshot
+            "\n<untrusted_screen_data>\n" + snapshot.toPrompt().take(6500) +
+                "\n</untrusted_screen_data>"
+        }.getOrNull()
+    }
+
     /** ينفّذ أداة ويعيد ناتجاً نصياً يُعاد للنموذج. */
     suspend fun execute(name: String, argsJson: String): ToolOutcome {
         val args = runCatching {
@@ -337,7 +352,7 @@ class DeviceTools(private val context: android.content.Context) {
                 while (android.os.SystemClock.elapsedRealtime() - started < timeout) {
                     element = acc?.matchElement(text)
                     if (element != null) break
-                    delay(350)
+                    delay(120)
                 }
                 ToolOutcome.text(if (element != null) "ظهر النص '$text' عند (${element.centerX},${element.centerY})" else "انتهت المهلة دون ظهور '$text'")
             }
@@ -447,7 +462,7 @@ class DeviceTools(private val context: android.content.Context) {
                     ?: return ToolOutcome.text("اسم التطبيق مفقود.")
                 val launcherCtx = acc ?: context
                 val msg = apps.launch(launcherCtx, q)
-                delay(1200)
+                // Do not sleep blindly: the next UI observation verifies loading.
                 ToolOutcome.text(msg)
             }
 
