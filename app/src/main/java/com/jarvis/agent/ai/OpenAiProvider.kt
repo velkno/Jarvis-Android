@@ -63,11 +63,11 @@ class OpenAiProvider(
             .post(body.toString().toRequestBody(mediaType))
             .build()
 
-        http.client.newCall(request).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
+        val resp = http.execute(request)
+        val text = resp.body
             if (!resp.isSuccessful) error("OpenAI ${resp.code}: $text")
             parseResponse(json.parseToJsonElement(text).jsonObject)
-        }
+
     }
 
     private fun encodeMessage(m: ChatMessage): JsonObject = buildJsonObject {
