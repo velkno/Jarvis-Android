@@ -76,7 +76,9 @@ object FastActionExecutor {
                     // Match known packages OR the complete visible installed-app name.
                     // Never use partial fuzzy matches in the fast route.
                     val packageName = aliases[key]
-                        ?: launcher.list().firstOrNull { normalized(it.label) == key }?.pkg
+                        ?: withContext(Dispatchers.Default) {
+                            launcher.list().firstOrNull { normalized(it.label) == key }?.pkg
+                        }
                         ?: if (intent.appName.contains('.') &&
                             intent.appName.matches(Regex("[a-zA-Z0-9_.]+"))) intent.appName
                         else null

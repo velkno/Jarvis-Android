@@ -124,14 +124,14 @@ class JarvisAccessibilityService : AccessibilityService() {
         return withContext(Dispatchers.Default) {
             try {
                 val maxEdge = maxOf(shot.width, shot.height)
-                val ratio = min(1f, 2000f / maxEdge)
+                val ratio = min(1f, 1600f / maxEdge)
                 val w = maxOf(1, (shot.width * ratio).toInt())
                 val h = maxOf(1, (shot.height * ratio).toInt())
                 val scaled = if (w == shot.width && h == shot.height) shot
                     else Bitmap.createScaledBitmap(shot, w, h, true)
                 val out = ByteArrayOutputStream()
                 try {
-                    if (!scaled.compress(Bitmap.CompressFormat.JPEG, 78, out)) return@withContext null
+                    if (!scaled.compress(Bitmap.CompressFormat.JPEG, 72, out)) return@withContext null
                     ScreenImage(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP), w, h)
                 } finally {
                     if (scaled !== shot) scaled.recycle()

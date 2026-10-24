@@ -9,14 +9,25 @@ class AppLauncher(private val context: Context) {
 
     data class App(val label: String, val pkg: String)
 
-    /** كل التطبيقات التي لها أيقونة في الشاشة الرئيسية. */
+    companion object {
+        @Volatile private var cachedApps: List<App>? = null
+        @Volatile private var cacheTimeMs: Long = 0L
+    }
+
+    /** Cache installed app enumeration for 30s across launcher instances. */
+    @Synchronized
     fun list(): List<App> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        cachedApps?.let { if (now - cacheTimeMs < 30_000L) return it }
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return pm.queryIntentActivities(intent, 0)
+        val result = pm.queryIntentActivities(intent, 0)
             .map { App(it.loadLabel(pm).toString(), it.activityInfo.packageName) }
             .distinctBy { it.pkg }
             .sortedBy { it.label.lowercase() }
+        cachedApps = result
+        cacheTimeMs = now
+        return result
     }
 
     /** يجد تطبيقاً بالحزمة أو بالاسم (مطابقة تامة ثم جزئية). */
