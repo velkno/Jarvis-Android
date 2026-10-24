@@ -50,15 +50,13 @@ class OpenAiResponsesProvider(
             .post(body.toString().toRequestBody(media))
             .build()
 
-        http.client.newCall(request).execute().use { response ->
-            val payload = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                // Provider errors may echo secrets/user content; do not log full responses.
-                error("OpenAI Responses HTTP " + response.code +
-                    ". Check model availability, API billing, and tool permissions.")
-            }
-            parseResponse(json.parseToJsonElement(payload).jsonObject)
+        val response = http.execute(request)
+        val payload = response.body
+        if (!response.isSuccessful) {
+            error("OpenAI Responses HTTP " + response.code +
+                ". Check model availability, API billing, and tool permissions.")
         }
+        parseResponse(json.parseToJsonElement(payload).jsonObject)
     }
 
     private fun encodeMessage(m: ChatMessage): List<JsonObject> {
