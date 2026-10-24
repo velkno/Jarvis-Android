@@ -39,11 +39,11 @@ class AnthropicProvider(
             .post(body.toString().toRequestBody(mediaType))
             .build()
 
-        http.client.newCall(request).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
+        val resp = http.execute(request)
+        val text = resp.body
             if (!resp.isSuccessful) error("Anthropic ${resp.code}: $text")
             parseResponse(json.parseToJsonElement(text).jsonObject)
-        }
+
     }
 
     /** Claude يشترط أن تأتي كل نتائج الأدوات لدورة واحدة في رسالة user واحدة. */
